@@ -13,6 +13,7 @@ import CommunicationPracticePage from "./pages/CommunicationPracticePage";
 import BlogPage from "./pages/BlogPage";
 import SignInPage from "./pages/SignInPage";
 import LogoutPage from "./pages/LogoutPage";
+import { VoiceRecognitionTest } from "./components/VoiceRecognitionTest";
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
         <Route path="/blog" element={<BlogPage />} />
         <Route path="/signin" element={<SignInPage />} />
         <Route path="/logout" element={<LogoutPage />} />
+        <Route path="/voice-test" element={<VoiceRecognitionTest />} />
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardHome />} />
           <Route path="practice" element={<Practice />} />

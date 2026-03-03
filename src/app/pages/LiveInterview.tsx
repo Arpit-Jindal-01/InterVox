@@ -13,6 +13,8 @@ import {
   Activity,
 } from "lucide-react";
 import { useNavigate } from "react-router";
+import { useWhisperRecognition } from "../../hooks/useWhisperRecognition";
+import { useSarvamTTS } from "../../hooks/useSarvamTTS";
 
 const mockQuestions = [
   "Tell me about yourself and your background.",
@@ -39,6 +41,24 @@ export default function LiveInterview() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previousQuestionRef = useRef<number>(-1); // Track previous question
+
+  // Whisper Voice Recognition Hook (More Reliable)
+  const {
+    transcript,
+    isRecording: isWhisperRecording,
+    error: voiceError,
+    startRecording: startWhisperRecording,
+    stopRecording: stopWhisperRecording,
+    resetTranscript,
+  } = useWhisperRecognition();
+
+  // Sarvam AI Text-to-Speech Hook (Indian voices)
+  const {
+    speak,
+    stop: stopSpeaking,
+    isSpeaking,
+  } = useSarvamTTS();
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [inputMode, setInputMode] = useState<InputMode>("voice");
@@ -47,11 +67,38 @@ export default function LiveInterview() {
   const [timeRemaining, setTimeRemaining] = useState(120);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isSoundOn, setIsSoundOn] = useState(true);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false); // Track user interaction for autoplay
   const [cameraPermission, setCameraPermission] = useState<"granted" | "denied" | "prompt">("prompt");
   const [audioLevel, setAudioLevel] = useState(0);
 
   const totalQuestions = mockQuestions.length;
   const progress = ((currentQuestion + 1) / totalQuestions) * 100;
+
+  // Auto-read question aloud when question changes (only after user interaction)
+  useEffect(() => {
+    console.log('🎯 useEffect triggered - Current:', currentQuestion, 'Previous:', previousQuestionRef.current, 'Sound:', isSoundOn, 'User interacted:', hasUserInteracted);
+    
+    // Only auto-speak if:
+    // 1. Question number actually changed (not first button click)
+    // 2. Sound is on and user has interacted
+    const questionChanged = previousQuestionRef.current !== currentQuestion && previousQuestionRef.current !== -1;
+    
+    if (questionChanged && isSoundOn && hasUserInteracted && mockQuestions[currentQuestion]) {
+      console.log('🔊 Question CHANGED - Auto-speaking with Sarvam AI:', mockQuestions[currentQuestion].substring(0, 50));
+      
+      // Stop any current speech before starting new one
+      stopSpeaking();
+      
+      // Small delay to ensure previous speech is fully stopped
+      setTimeout(() => {
+        speak(mockQuestions[currentQuestion], { language: 'en-IN', speaker: 'kavya' });
+      }, 150);
+    }
+    
+    // Update previous question tracker
+    previousQuestionRef.current = currentQuestion;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestion, isSoundOn, hasUserInteracted]);
 
   // Initialize camera and microphone
   useEffect(() => {
@@ -171,57 +218,73 @@ export default function LiveInterview() {
   }, [isRecording]);
 
   const handleNext = () => {
+    console.log('⏭️ Moving to next question...');
+    
     // Stop recording if active
     if (isRecording) {
       stopRecording();
     }
 
+    // Ensure mediaRecorder is cleared
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch (err) {
+        console.error('Cleanup error:', err);
+      }
+      mediaRecorderRef.current = null;
+    }
+
+    // Reset transcript for next question
+    resetTranscript();
+    
+    // Clear audio chunks
+    audioChunksRef.current = [];
+
     if (currentQuestion < totalQuestions - 1) {
       setCurrentQuestion((prev) => prev + 1);
       setTextAnswer("");
       setTimeRemaining(120);
+      console.log('✅ Ready for next question');
     } else {
       navigate("/interview-results");
     }
   };
 
   const startRecording = async () => {
-    if (!streamRef.current) return;
-
     try {
-      audioChunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(streamRef.current, {
-        mimeType: "audio/webm",
-      });
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        // Here you would typically upload the audio to your server for transcription
-        console.log("Recording completed, blob size:", audioBlob.size);
-      };
-
-      mediaRecorder.start();
-      mediaRecorderRef.current = mediaRecorder;
+      console.log('🎤 Starting recording with Whisper...');
+      
+      // Start Whisper recording (handles audio capture + transcription)
+      await startWhisperRecording();
+      
       setIsRecording(true);
+      console.log('✅ Recording started successfully');
     } catch (error) {
       console.error("Error starting recording:", error);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
   };
 
+  const stopRecording = async () => {
+    console.log('🛑 Stopping recording...');
+    
+    try {
+      // Stop Whisper recording (will auto-transcribe)
+      await stopWhisperRecording();
+      
+      setIsRecording(false);
+      console.log('✅ Recording stopped successfully');
+    } catch (error) {
+      console.error("Error stopping recording:", error);
+    }
+  };
+
   const toggleRecording = () => {
+    setHasUserInteracted(true); // Enable auto-play for next questions
+    
     if (isRecording) {
       stopRecording();
     } else {
@@ -230,10 +293,18 @@ export default function LiveInterview() {
   };
 
   const handleSubmit = () => {
+    console.log('📤 Submitting answer...');
+    
     if (isRecording) {
       stopRecording();
     }
-    handleNext();
+    
+    // Small delay to ensure recording stops completely before moving to next question
+    setTimeout(() => {
+      // Reset transcript for next question
+      resetTranscript();
+      handleNext();
+    }, 100);
   };
 
   const toggleCamera = () => {
@@ -315,8 +386,15 @@ export default function LiveInterview() {
 
           {/* Audio toggle */}
           <button
-            onClick={() => setIsSoundOn(!isSoundOn)}
+            onClick={() => {
+              const newSoundState = !isSoundOn;
+              setIsSoundOn(newSoundState);
+              if (!newSoundState) {
+                stopSpeaking(); // Stop TTS when sound is muted
+              }
+            }}
             className="w-9 h-9 rounded-lg bg-[#334155] hover:bg-[#475569] flex items-center justify-center transition-colors"
+            title={isSoundOn ? "Mute AI voice" : "Unmute AI voice"}
           >
             {isSoundOn ? (
               <Volume2 size={16} className="text-[#E2E8F0]" strokeWidth={2} />
@@ -345,7 +423,7 @@ export default function LiveInterview() {
             <div className="w-10 h-10 rounded-xl bg-[#2563EB]/10 flex items-center justify-center flex-shrink-0">
               <MessageSquare size={18} className="text-[#2563EB]" strokeWidth={2} />
             </div>
-            <div>
+            <div className="flex-1">
               <span
                 style={{
                   fontFamily: "'Inter', sans-serif",
@@ -358,10 +436,29 @@ export default function LiveInterview() {
               >
                 Interview Question
               </span>
+              {isSpeaking && (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex gap-1">
+                    <div className="w-1 h-3 bg-[#10B981] rounded-full animate-pulse" style={{ animationDelay: '0s' }} />
+                    <div className="w-1 h-3 bg-[#10B981] rounded-full animate-pulse" style={{ animationDelay: '0.1s' }} />
+                    <div className="w-1 h-3 bg-[#10B981] rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.7rem",
+                      color: "#10B981",
+                      fontWeight: 500,
+                    }}
+                  >
+                    AI is speaking...
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <p
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -374,6 +471,37 @@ export default function LiveInterview() {
             >
               {mockQuestions[currentQuestion]}
             </p>
+            
+            {/* Replay Question Button */}
+            {isSoundOn && (
+              <button
+                onClick={() => {
+                  console.log('🎵 Play button clicked - Using Sarvam AI (Kavya voice)');
+                  setHasUserInteracted(true);
+                  // Sarvam AI TTS with Indian voice
+                  speak(mockQuestions[currentQuestion], { language: 'en-IN', speaker: 'kavya' });
+                }}
+                disabled={isSpeaking}
+                className="px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:scale-105 active:scale-95"
+                style={{
+                  backgroundColor: !hasUserInteracted ? '#10B981' : '#334155',
+                  boxShadow: !hasUserInteracted ? '0 4px 20px rgba(16, 185, 129, 0.3)' : 'none',
+                }}
+                title={!hasUserInteracted ? "Click to hear question" : "Replay question"}
+              >
+                <Volume2 size={16} className={!hasUserInteracted ? "text-white" : "text-[#94A3B8]"} strokeWidth={2} />
+                <span
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.8rem",
+                    color: !hasUserInteracted ? "#FFFFFF" : "#94A3B8",
+                    fontWeight: !hasUserInteracted ? 600 : 500,
+                  }}
+                >
+                  {isSpeaking ? "🎵 Playing..." : !hasUserInteracted ? "🔊 Click to Hear Question" : "🔁 Replay Question"}
+                </span>
+              </button>
+            )}
           </div>
 
           {/* Tips */}
@@ -534,6 +662,7 @@ export default function LiveInterview() {
             <button
               onClick={() => {
                 if (isRecording) stopRecording();
+                resetTranscript();
                 setInputMode("voice");
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-150"
@@ -551,6 +680,7 @@ export default function LiveInterview() {
             <button
               onClick={() => {
                 if (isRecording) stopRecording();
+                resetTranscript();
                 setInputMode("text");
               }}
               className="flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-150"
@@ -569,51 +699,160 @@ export default function LiveInterview() {
 
           {/* Input Area */}
           {inputMode === "voice" ? (
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={toggleRecording}
-                className="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-150"
-                style={{
-                  backgroundColor: isRecording ? "#DC2626" : "#2563EB",
-                  boxShadow: isRecording
-                    ? `0 0 0 ${4 + audioLevel / 10}px rgba(220, 38, 38, 0.2), 0 8px 32px rgba(220, 38, 38, 0.4)`
-                    : "0 0 0 4px rgba(37, 99, 235, 0.2), 0 8px 32px rgba(37, 99, 235, 0.4)",
-                  transform: isRecording ? `scale(${1 + audioLevel / 1000})` : "scale(1)",
-                }}
-              >
-                {isRecording ? (
-                  <MicOff size={24} className="text-white" strokeWidth={2} />
-                ) : (
-                  <Mic size={24} className="text-white" strokeWidth={2} />
-                )}
-              </button>
-              <div className="flex-1 max-w-md">
-                <p
+            <div className="flex flex-col gap-4">
+              {/* Voice Error Display */}
+              {voiceError && (
+                <div className="px-4 py-3 bg-[#7F1D1D] border border-[#DC2626] rounded-xl">
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#FCA5A5",
+                    }}
+                  >
+                    ⚠️ {voiceError}
+                  </p>
+                </div>
+              )}
+
+              {/* Status Messages */}
+              {isWhisperRecording && !transcript && (
+                <div className="px-4 py-3 bg-[#1E3A8A] border border-[#3B82F6] rounded-xl">
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#93C5FD",
+                      textAlign: "center",
+                    }}
+                  >
+                    🎤 Recording... Speak clearly at normal volume
+                  </p>
+                </div>
+              )}
+
+              {/* Transcript Display */}
+              {transcript && (
+                <div className="px-4 py-3 bg-[#0F172A] border border-[#10B981] rounded-xl min-h-[100px] max-h-[200px] overflow-y-auto">
+                  <div className="flex items-start gap-2 mb-2">
+                    <Activity size={14} className="text-[#10B981] mt-0.5 flex-shrink-0" strokeWidth={2} />
+                    <span
+                      style={{
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "0.75rem",
+                        fontWeight: 600,
+                        color: "#10B981",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      Your Answer:
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#E2E8F0",
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    {transcript}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-center gap-4">
+                <button
+                  onClick={toggleRecording}
+                  className="w-16 h-16 rounded-full flex items-center justify-center transition-all duration-150 relative"
+                  style={{
+                    backgroundColor: isRecording ? "#DC2626" : "#2563EB",
+                    boxShadow: isRecording
+                      ? `0 0 0 ${4 + audioLevel / 10}px rgba(220, 38, 38, 0.2), 0 8px 32px rgba(220, 38, 38, 0.4)`
+                      : "0 0 0 4px rgba(37, 99, 235, 0.2), 0 8px 32px rgba(37, 99, 235, 0.4)",
+                    transform: isRecording ? `scale(${1 + audioLevel / 1000})` : "scale(1)",
+                  }}
+                  title={isRecording ? "Click to stop recording" : "Click to start speaking"}
+                >
+                  {isRecording ? (
+                    <MicOff size={24} className="text-white" strokeWidth={2} />
+                  ) : (
+                    <Mic size={24} className="text-white" strokeWidth={2} />
+                  )}
+                  
+                  {/* Pulsing ring when recording */}
+                  {isRecording && (
+                    <div 
+                      className="absolute inset-0 rounded-full border-2 border-white animate-ping"
+                      style={{ opacity: 0.3 }}
+                    />
+                  )}
+                </button>
+                
+                <div className="flex-1 max-w-md">
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      fontWeight: isRecording ? 600 : 500,
+                      color: isRecording ? "#FCA5A5" : "#94A3B8",
+                      textAlign: "center",
+                    }}
+                  >
+                    {isRecording 
+                      ? "🎤 Recording... Speak clearly at normal volume" 
+                      : "Click the microphone and speak your answer"}
+                  </p>
+                  {isRecording && (
+                    <p
+                      style={{
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "0.75rem",
+                        color: "#64748B",
+                        textAlign: "center",
+                        marginTop: "4px",
+                      }}
+                    >
+                      💡 Tip: Speak continuously, the system will pick up your words
+                    </p>
+                  )}
+                </div>
+                
+                <button
+                  onClick={handleSubmit}
+                  disabled={!transcript.trim()}
+                  className="px-6 py-3 rounded-xl transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
                     fontFamily: "'Inter', sans-serif",
+                    fontWeight: 700,
                     fontSize: "0.875rem",
-                    color: isRecording ? "#FCA5A5" : "#94A3B8",
-                    textAlign: "center",
+                    backgroundColor: "#10B981",
+                    color: "#FFFFFF",
+                    boxShadow: transcript.trim() ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
                   }}
                 >
-                  {isRecording ? "Recording your answer... Click to stop" : "Click the microphone to start recording"}
-                </p>
+                  Submit & Next
+                </button>
               </div>
-              <button
-                onClick={handleSubmit}
-                disabled={!isRecording}
-                className="px-6 py-3 rounded-xl transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  fontFamily: "'Inter', sans-serif",
-                  fontWeight: 700,
-                  fontSize: "0.875rem",
-                  backgroundColor: "#10B981",
-                  color: "#FFFFFF",
-                  boxShadow: isRecording ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
-                }}
-              >
-                Submit & Next
-              </button>
+
+              {/* Help text */}
+              {!transcript && !isRecording && (
+                <div className="text-center">
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#64748B",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    ℹ️ Make sure your browser has microphone permission enabled.
+                    <br />
+                    Speak at normal volume - no need to shout or get too close to the mic.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-end gap-3">
