@@ -12,27 +12,29 @@ import {
   CameraOff,
   Activity,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useNavigate, useLocation } from "react-router";
 import { useWhisperRecognition } from "../../hooks/useWhisperRecognition";
 import { useSarvamTTS } from "../../hooks/useSarvamTTS";
+import { useEvaluation, EvaluationResult } from "../../hooks/useEvaluation";
+import { useQuestionGenerator, QuestionData } from "../../hooks/useQuestionGenerator";
+import { useCommunicationAnalytics, AnswerAnalytics } from "../../hooks/useCommunicationAnalytics";
 
-const mockQuestions = [
-  "Tell me about yourself and your background.",
-  "What are your greatest strengths and how have you applied them in your previous role?",
-  "Describe a challenging project you worked on and how you overcame obstacles.",
-  "Where do you see yourself in 5 years?",
-  "Why are you interested in this position?",
-  "Tell me about a time when you disagreed with a team member. How did you handle it?",
-  "What is your biggest professional achievement?",
-  "How do you handle stress and pressure?",
-  "What motivates you in your work?",
-  "Do you have any questions for us?",
-];
+interface InterviewConfig {
+  role: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  questionCount: number;
+}
+
+interface PreviousQA {
+  question: string;
+  answer: string;
+}
 
 type InputMode = "voice" | "text";
 
 export default function LiveInterview() {
   const navigate = useNavigate();
+  const location = useLocation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -42,6 +44,13 @@ export default function LiveInterview() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousQuestionRef = useRef<number>(-1); // Track previous question
+
+  // Get interview configuration from navigation state
+  const interviewConfig = (location.state as InterviewConfig) || {
+    role: 'software_engineer',
+    difficulty: 'medium' as const,
+    questionCount: 10,
+  };
 
   // Whisper Voice Recognition Hook (More Reliable)
   const {
@@ -60,7 +69,30 @@ export default function LiveInterview() {
     isSpeaking,
   } = useSarvamTTS();
 
+  // Evaluation Hook
+  const {
+    evaluateAnswer,
+    isEvaluating,
+    error: evaluationError,
+  } = useEvaluation();
+
+  // Question Generator Hook
+  const {
+    generateQuestion,
+    isGenerating,
+    error: questionError,
+  } = useQuestionGenerator();
+
+  // State
+  const [questions, setQuestions] = useState<QuestionData[]>([]);
+  const [answers, setAnswers] = useState<string[]>([]);
+  const answersRef = useRef<string[]>([]); // Sync ref to prevent state timing issues
+  const [previousQA, setPreviousQA] = useState<PreviousQA[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [isEvaluatingAll, setIsEvaluatingAll] = useState(false);
+  
+  // Communication analytics
+  const { startTracking, recordPause, analyzeAnswer, getAverageMetrics, allAnalytics } = useCommunicationAnalytics();
   const [inputMode, setInputMode] = useState<InputMode>("voice");
   const [isRecording, setIsRecording] = useState(false);
   const [textAnswer, setTextAnswer] = useState("");
@@ -71,8 +103,42 @@ export default function LiveInterview() {
   const [cameraPermission, setCameraPermission] = useState<"granted" | "denied" | "prompt">("prompt");
   const [audioLevel, setAudioLevel] = useState(0);
 
-  const totalQuestions = mockQuestions.length;
+  const totalQuestions = interviewConfig.questionCount;
   const progress = ((currentQuestion + 1) / totalQuestions) * 100;
+
+  // Generate first question on mount (start with behavioral/introduction)
+  useEffect(() => {
+    const loadFirstQuestion = async () => {
+      console.log('🎯 Starting with standard interview opener...');
+      console.log('   Config:', interviewConfig);
+      
+      try {
+        // First question is ALWAYS "Tell me about yourself" - standard interview opener
+        const firstQuestion = {
+          question: "Tell me about yourself and your background.",
+          ideal_answer: "A strong answer should include: your current role and experience, relevant technical skills, notable achievements or projects, and what motivates you professionally.",
+          keywords: ["experience", "background", "skills", "expertise", "achievements", "passion", "goals"],
+          role: interviewConfig.role,
+          difficulty: 'easy'
+        };
+        
+        setQuestions([firstQuestion]);
+        setAnswers([]); // Initialize answers array
+        answersRef.current = []; // Initialize ref
+        console.log('✅ First question loaded: Tell me about yourself');
+      } catch (error) {
+        console.error('❌ Error loading question:', error);
+        alert('Error: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      }
+    };
+    
+    const timer = setTimeout(() => {
+      loadFirstQuestion();
+    }, 100);
+    
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-read question aloud when question changes (only after user interaction)
   useEffect(() => {
@@ -83,15 +149,15 @@ export default function LiveInterview() {
     // 2. Sound is on and user has interacted
     const questionChanged = previousQuestionRef.current !== currentQuestion && previousQuestionRef.current !== -1;
     
-    if (questionChanged && isSoundOn && hasUserInteracted && mockQuestions[currentQuestion]) {
-      console.log('🔊 Question CHANGED - Auto-speaking with Sarvam AI:', mockQuestions[currentQuestion].substring(0, 50));
+    if (questionChanged && isSoundOn && hasUserInteracted && questions[currentQuestion]) {
+      console.log('🔊 Question CHANGED - Auto-speaking with Sarvam AI:', questions[currentQuestion].question.substring(0, 50));
       
       // Stop any current speech before starting new one
       stopSpeaking();
       
       // Small delay to ensure previous speech is fully stopped
       setTimeout(() => {
-        speak(mockQuestions[currentQuestion], { language: 'en-IN', speaker: 'kavya' });
+        speak(questions[currentQuestion].question, { language: 'en-IN', speaker: 'kavya' });
       }, 150);
     }
     
@@ -217,45 +283,12 @@ export default function LiveInterview() {
     };
   }, [isRecording]);
 
-  const handleNext = () => {
-    console.log('⏭️ Moving to next question...');
-    
-    // Stop recording if active
-    if (isRecording) {
-      stopRecording();
-    }
-
-    // Ensure mediaRecorder is cleared
-    if (mediaRecorderRef.current) {
-      try {
-        if (mediaRecorderRef.current.state !== 'inactive') {
-          mediaRecorderRef.current.stop();
-        }
-      } catch (err) {
-        console.error('Cleanup error:', err);
-      }
-      mediaRecorderRef.current = null;
-    }
-
-    // Reset transcript for next question
-    resetTranscript();
-    
-    // Clear audio chunks
-    audioChunksRef.current = [];
-
-    if (currentQuestion < totalQuestions - 1) {
-      setCurrentQuestion((prev) => prev + 1);
-      setTextAnswer("");
-      setTimeRemaining(120);
-      console.log('✅ Ready for next question');
-    } else {
-      navigate("/interview-results");
-    }
-  };
-
   const startRecording = async () => {
     try {
       console.log('🎤 Starting recording with Whisper...');
+      
+      // Start communication analytics tracking
+      startTracking();
       
       // Start Whisper recording (handles audio capture + transcription)
       await startWhisperRecording();
@@ -292,19 +325,239 @@ export default function LiveInterview() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     console.log('📤 Submitting answer...');
     
     if (isRecording) {
       stopRecording();
     }
     
-    // Small delay to ensure recording stops completely before moving to next question
+    // Get user's answer (from voice transcript or text input)
+    const userAnswer = inputMode === 'voice' ? transcript : textAnswer;
+    
+    if (!userAnswer || userAnswer.trim() === '' || !questions[currentQuestion]) {
+      console.log('⚠️ No answer provided or question not loaded');
+      // Still allow them to continue
+      setTimeout(() => {
+        resetTranscript();
+        handleNext();
+      }, 100);
+      return;
+    }
+
+    console.log('💾 Storing answer...');
+    console.log(`   Current question index: ${currentQuestion}`);
+    console.log(`   Answer length: ${userAnswer.length} chars`);
+    console.log(`   Answer preview: "${userAnswer.substring(0, 100)}..."`);
+    
+    // Analyze communication metrics for this answer
+    const communicationMetrics = analyzeAnswer(userAnswer, currentQuestion);
+    console.log('📊 Communication Analytics:');
+    console.log(`   WPM: ${communicationMetrics.wordsPerMinute}`);
+    console.log(`   Filler words: ${communicationMetrics.fillerWords.count}`);
+    console.log(`   Fluency score: ${communicationMetrics.fluencyScore}%`);
+    
+    // Store the answer in BOTH state and ref (ref is synchronous)
+    const newAnswers = [...answersRef.current];
+    newAnswers[currentQuestion] = userAnswer;
+    answersRef.current = newAnswers;
+    
+    setAnswers(newAnswers);
+    
+    // Store this Q&A for context in next question generation
+    setPreviousQA(prev => [
+      ...prev,
+      {
+        question: questions[currentQuestion].question,
+        answer: userAnswer,
+      }
+    ]);
+    
+    console.log('✅ Answer stored successfully!');
+    console.log(`   Total answers stored: ${answersRef.current.length}`);
+    console.log(`   Answers array: [${answersRef.current.map((a, i) => `Q${i+1}: ${a ? a.substring(0,20)+'...' : 'empty'}`).join(', ')}]`);
+    
+    // Small delay to ensure state is updated before proceeding
     setTimeout(() => {
-      // Reset transcript for next question
       resetTranscript();
       handleNext();
-    }, 100);
+    }, 150); // Slightly longer delay to ensure answer is captured
+  };
+
+  const handleNext = async () => {
+    console.log('⏭️ Moving to next question...');
+    
+    // Stop recording if active
+    if (isRecording) {
+      stopRecording();
+    }
+
+    // Ensure mediaRecorder is cleared
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch (err) {
+        console.error('Cleanup error:', err);
+      }
+      mediaRecorderRef.current = null;
+    }
+
+    // Reset transcript for next question
+    resetTranscript();
+    
+    // Clear audio chunks
+    audioChunksRef.current = [];
+
+    if (currentQuestion < totalQuestions - 1) {
+      const nextQuestionIndex = currentQuestion + 1;
+      
+      // Generate next question if not already generated
+      if (!questions[nextQuestionIndex]) {
+        console.log(`🎯 Generating question ${nextQuestionIndex + 1}/${totalQuestions}...`);
+        console.log(`   Previous Q&A context: ${previousQA.length} items`);
+        if (previousQA.length > 0) {
+          console.log(`   Last answer: "${previousQA[previousQA.length - 1].answer.substring(0, 60)}..."`);
+        }
+        
+        // Determine difficulty based on question progression
+        // First 30% - easy behavioral
+        // Next 40% - medium technical
+        // Last 30% - hard technical
+        let difficulty: 'easy' | 'medium' | 'hard';
+        const progressPercent = (nextQuestionIndex / totalQuestions) * 100;
+        
+        if (progressPercent < 30) {
+          difficulty = 'easy'; // Behavioral/introduction questions
+        } else if (progressPercent < 70) {
+          difficulty = 'medium'; // Technical questions
+        } else {
+          difficulty = 'hard'; // Advanced technical questions
+        }
+        
+        console.log(`   Difficulty: ${difficulty} (${progressPercent.toFixed(0)}% through interview)`);
+        
+        const newQuestion = await generateQuestion({
+          role: interviewConfig.role as any,
+          difficulty: difficulty,
+          previous_qa: previousQA,
+          use_ai: true,
+        });
+        
+        if (newQuestion) {
+          setQuestions(prev => [...prev, newQuestion]);
+          console.log('✅ Question generated:', newQuestion.question);
+        } else {
+          console.error('❌ Failed to generate next question');
+          // If question generation fails, evaluate and go to results
+          await evaluateAllAnswersAndNavigate();
+          return;
+        }
+      }
+      
+      setCurrentQuestion(nextQuestionIndex);
+      setTextAnswer("");
+      setTimeRemaining(120);
+      console.log('✅ Ready for next question');
+    } else {
+      // All questions completed - evaluate all answers and navigate to results
+      console.log('🎯 Interview complete! Waiting for final answer to save...');
+      
+      // Small delay to ensure last answer is fully captured in ref
+      setTimeout(async () => {
+        console.log('🎯 Starting evaluation...');
+        await evaluateAllAnswersAndNavigate();
+      }, 200);
+    }
+  };
+
+  const evaluateAllAnswersAndNavigate = async () => {
+    setIsEvaluatingAll(true);
+    
+    try {
+      // Use ref to get latest answers (avoids state timing issues)
+      const finalAnswers = answersRef.current;
+      
+      console.log('🔍 Evaluating all answers...');
+      console.log(`   Total questions: ${questions.length}`);
+      console.log(`   Total answers captured: ${finalAnswers.length}`);
+      console.log(`   Answers preview: [${finalAnswers.map((a, i) => `Q${i+1}:${a?'✓':'✗'}`).join(', ')}]`);
+      
+      // Evaluate each Q&A pair
+      const evaluationPromises = questions.map(async (question, index) => {
+        const userAnswer = finalAnswers[index] || '';
+        
+        console.log(`\n📝 Question ${index + 1}/${questions.length}:`);
+        console.log(`   Q: ${question.question.substring(0, 60)}...`);
+        console.log(`   A: ${userAnswer ? userAnswer.substring(0, 60) + '...' : '❌ NO ANSWER'}`);
+        
+        if (!userAnswer.trim()) {
+          console.log('   ⚠️ Skipped - no answer provided');
+          return null; // Skip unanswered questions
+        }
+        
+        const result = await evaluateAnswer({
+          question: question.question,
+          user_answer: userAnswer,
+          ideal_answer: question.ideal_answer,
+          keywords: question.keywords,
+          role: interviewConfig.role,
+        });
+        
+        if (result) {
+          console.log(`   ✅ Score: ${result.final_score}% - Grade: ${result.grade}`);
+          console.log(`   📊 Breakdown: Tech=${result.score_breakdown.technical_accuracy}/10, Clarity=${result.score_breakdown.clarity_score}/10`);
+          console.log(`   💪 Strengths: ${result.strengths?.length || 0}, Improvements: ${result.improvements?.length || 0}`);
+        }
+        
+        return result;
+      });
+      
+      const evaluationResults = await Promise.all(evaluationPromises);
+      
+      // Filter out null results and calculate overall stats
+      const validResults = evaluationResults.filter(r => r !== null) as EvaluationResult[];
+      
+      console.log(`\n✅ Evaluation Complete!`);
+      console.log(`   Valid results: ${validResults.length}/${questions.length}`);
+      
+      if (validResults.length > 0) {
+        const avgScore = validResults.reduce((sum, r) => sum + r.final_score, 0) / validResults.length;
+        
+        console.log(`   📈 Average score: ${avgScore.toFixed(1)}%`);
+        console.log(`   📊 Score range: ${Math.min(...validResults.map(r => r.final_score))}% - ${Math.max(...validResults.map(r => r.final_score))}%`);
+        
+        // Get communication analytics summary
+        const avgMetrics = getAverageMetrics();
+        if (avgMetrics) {
+          console.log(`\n📊 Communication Analytics Summary:`);
+          console.log(`   Average WPM: ${avgMetrics.wordsPerMinute}`);
+          console.log(`   Total filler words: ${avgMetrics.fillerWords.count}`);
+          console.log(`   Average fluency: ${avgMetrics.fluencyScore}%`);
+        }
+        
+        // Navigate to results page with evaluation data - use finalAnswers from ref
+        navigate('/interview-results', {
+          state: {
+            questions: questions,
+            answers: finalAnswers, // Use ref value, not state
+            evaluations: validResults,
+            overallScore: Math.round(avgScore),
+            interviewConfig: interviewConfig,
+            communicationAnalytics: allAnalytics, // Add analytics data
+          }
+        });
+      } else {
+        console.error('❌ No valid evaluations');
+        navigate('/interview-results');
+      }
+    } catch (error) {
+      console.error('❌ Evaluation error:', error);
+      navigate('/interview-results');
+    } finally {
+      setIsEvaluatingAll(false);
+    }
   };
 
   const toggleCamera = () => {
@@ -459,37 +712,100 @@ export default function LiveInterview() {
           </div>
 
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
-            <p
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontWeight: 500,
-                fontSize: "clamp(1.25rem, 3vw, 1.75rem)",
-                color: "#F8FAFC",
-                lineHeight: 1.5,
-                textAlign: "center",
-              }}
-            >
-              {mockQuestions[currentQuestion]}
-            </p>
-            
-            {/* Replay Question Button */}
-            {isSoundOn && (
-              <button
-                onClick={() => {
-                  console.log('🎵 Play button clicked - Using Sarvam AI (Kavya voice)');
-                  setHasUserInteracted(true);
-                  // Sarvam AI TTS with Indian voice
-                  speak(mockQuestions[currentQuestion], { language: 'en-IN', speaker: 'kavya' });
-                }}
-                disabled={isSpeaking}
-                className="px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:scale-105 active:scale-95"
-                style={{
-                  backgroundColor: !hasUserInteracted ? '#10B981' : '#334155',
-                  boxShadow: !hasUserInteracted ? '0 4px 20px rgba(16, 185, 129, 0.3)' : 'none',
-                }}
-                title={!hasUserInteracted ? "Click to hear question" : "Replay question"}
-              >
-                <Volume2 size={16} className={!hasUserInteracted ? "text-white" : "text-[#94A3B8]"} strokeWidth={2} />
+            {isGenerating || !questions[currentQuestion] ? (
+              questionError ? (
+                <div className="flex flex-col items-center gap-3">
+                  <AlertCircle size={48} className="text-[#EF4444]" strokeWidth={2} />
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: '1.125rem',
+                      color: '#EF4444',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Failed to generate question
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: '0.875rem',
+                      color: '#94A3B8',
+                      textAlign: 'center',
+                      maxWidth: '400px',
+                    }}
+                  >
+                    {questionError}
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 px-6 py-2.5 rounded-xl bg-[#2563EB] text-white hover:bg-[#1D4ED8] transition-colors"
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: '0.875rem',
+                      fontWeight: 600,
+                    }}
+                  >
+                    Reload Page
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-12 h-12 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin"></div>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: '1rem',
+                      color: '#94A3B8',
+                      fontWeight: 500,
+                    }}
+                  >
+                    🧠 AI is generating your next question...
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: '0.75rem',
+                      color: '#64748B',
+                    }}
+                  >
+                    This may take a few seconds...
+                  </p>
+                </div>
+              )
+            ) : (
+              <>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 500,
+                    fontSize: "clamp(1.25rem, 3vw, 1.75rem)",
+                    color: "#F8FAFC",
+                    lineHeight: 1.5,
+                    textAlign: "center",
+                  }}
+                >
+                  {questions[currentQuestion].question}
+                </p>
+                
+                {/* Replay Question Button */}
+                {isSoundOn && (
+                  <button
+                    onClick={() => {
+                      console.log('🎵 Play button clicked - Using Sarvam AI (Kavya voice)');
+                      setHasUserInteracted(true);
+                      // Sarvam AI TTS with Indian voice
+                      speak(questions[currentQuestion].question, { language: 'en-IN', speaker: 'kavya' });
+                    }}
+                    disabled={isSpeaking}
+                    className="px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:scale-105 active:scale-95"
+                    style={{
+                      backgroundColor: !hasUserInteracted ? '#10B981' : '#334155',
+                      boxShadow: !hasUserInteracted ? '0 4px 20px rgba(16, 185, 129, 0.3)' : 'none',
+                    }}
+                    title={!hasUserInteracted ? "Click to hear question" : "Replay question"}
+                  >
+                    <Volume2 size={16} className={!hasUserInteracted ? "text-white" : "text-[#94A3B8]"} strokeWidth={2} />
                 <span
                   style={{
                     fontFamily: "'Inter', sans-serif",
@@ -501,6 +817,8 @@ export default function LiveInterview() {
                   {isSpeaking ? "🎵 Playing..." : !hasUserInteracted ? "🔊 Click to Hear Question" : "🔁 Replay Question"}
                 </span>
               </button>
+            )}
+              </>
             )}
           </div>
 
@@ -821,7 +1139,7 @@ export default function LiveInterview() {
                 
                 <button
                   onClick={handleSubmit}
-                  disabled={!transcript.trim()}
+                  disabled={!transcript.trim() || isEvaluating}
                   className="px-6 py-3 rounded-xl transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
                     fontFamily: "'Inter', sans-serif",
@@ -829,10 +1147,10 @@ export default function LiveInterview() {
                     fontSize: "0.875rem",
                     backgroundColor: "#10B981",
                     color: "#FFFFFF",
-                    boxShadow: transcript.trim() ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
+                    boxShadow: transcript.trim() && !isEvaluating ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
                   }}
                 >
-                  Submit & Next
+                  {isEvaluating ? "Evaluating..." : "Submit & Next"}
                 </button>
               </div>
 
@@ -872,7 +1190,7 @@ export default function LiveInterview() {
               </div>
               <button
                 onClick={handleSubmit}
-                disabled={!textAnswer.trim()}
+                disabled={!textAnswer.trim() || isEvaluating}
                 className="px-6 py-3 rounded-xl transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed self-end"
                 style={{
                   fontFamily: "'Inter', sans-serif",
@@ -880,15 +1198,49 @@ export default function LiveInterview() {
                   fontSize: "0.875rem",
                   backgroundColor: "#10B981",
                   color: "#FFFFFF",
-                  boxShadow: textAnswer.trim() ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
+                  boxShadow: textAnswer.trim() && !isEvaluating ? "0 4px 20px rgba(16, 185, 129, 0.3)" : "none",
                 }}
               >
-                Submit & Next
+                {isEvaluating ? "Evaluating..." : "Submit & Next"}
               </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Loading Overlay for Final Evaluation */}
+      {isEvaluatingAll && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-[#1E293B] rounded-2xl border border-[#334155] p-8 text-center max-w-md">
+            <div className="w-16 h-16 border-4 border-[#2563EB] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: '1.25rem',
+                color: '#F8FAFC',
+                fontWeight: 600,
+              }}
+            >
+              Evaluating Your Interview
+            </p>
+            <p
+              style={{
+                fontFamily: "'Inter', sans-serif",
+                fontSize: '0.875rem',
+                color: '#94A3B8',
+                marginTop: '8px',
+              }}
+            >
+              AI is analyzing all your responses and generating comprehensive feedback...
+            </p>
+            <div className="mt-4 flex items-center justify-center gap-2 text-sm text-[#64748B]">
+              <div className="w-2 h-2 bg-[#2563EB] rounded-full animate-pulse"></div>
+              <div className="w-2 h-2 bg-[#2563EB] rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
+              <div className="w-2 h-2 bg-[#2563EB] rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

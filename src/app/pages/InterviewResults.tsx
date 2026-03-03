@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useLocation } from "react-router";
 import {
   ChevronLeft,
   Share2,
@@ -19,6 +19,9 @@ import {
   AlertTriangle,
   Home,
   Sparkles,
+  TrendingUp,
+  Zap,
+  Pause,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
@@ -116,6 +119,150 @@ const mockResultData = {
   ],
 };
 
+// Helper functions to transform evaluation data
+function generateSummary(evaluations: any[], overallScore: number): string {
+  if (!evaluations || evaluations.length === 0) {
+    return "Interview completed. Awaiting evaluation results.";
+  }
+  
+  // Collect all overall_feedback from individual evaluations
+  const allFeedback = evaluations
+    .map(e => e?.overall_feedback)
+    .filter(f => f && f.length > 0);
+  
+  if (allFeedback.length === 0) {
+    // Fallback if no feedback available
+    const avgScore = overallScore;
+    if (avgScore >= 85) {
+      return "You delivered an excellent interview performance with strong technical knowledge and clear communication. Your responses demonstrated solid problem-solving skills and relevant experience. Continue this level of preparation for future interviews.";
+    } else if (avgScore >= 70) {
+      return "You delivered a good interview performance with decent technical knowledge. Your responses showed understanding of key concepts. Focus on providing more specific examples and improving clarity to enhance your presentation.";
+    } else {
+      return "Your interview showed potential but needs improvement. Focus on strengthening your technical fundamentals and practice providing clearer, more structured responses. Review the feedback below for specific areas to work on.";
+    }
+  }
+  
+  // Synthesize a comprehensive summary from all feedback
+  const avgScore = overallScore;
+  let summary = "";
+  
+  if (avgScore >= 85) {
+    summary = `🎯 Exceptional Performance: You demonstrated strong technical expertise throughout the interview. `;
+  } else if (avgScore >= 70) {
+    summary = `📈 Good Performance: You showed solid understanding of key concepts with room for growth. `;
+  } else if (avgScore >= 50) {
+    summary = `💡 Developing Performance: Your responses showed potential but need more depth and accuracy. `;
+  } else {
+    summary = `📚 Needs Improvement: Focus on strengthening fundamental concepts and providing clearer responses. `;
+  }
+  
+  // Add specific insights from evaluations
+  const totalQuestions = evaluations.length;
+  const highScoring = evaluations.filter(e => e.final_score >= 80).length;
+  const needsWork = evaluations.filter(e => e.final_score < 60).length;
+  
+  if (highScoring > totalQuestions * 0.6) {
+    summary += `You performed well on ${highScoring} out of ${totalQuestions} questions, showing consistent technical knowledge. `;
+  } else if (needsWork > totalQuestions * 0.4) {
+    summary += `Several responses need improvement - review the detailed feedback below to identify key areas. `;
+  }
+  
+  // Add the most relevant feedback point
+  if (allFeedback.length > 0) {
+    // Take feedback from the question with median score
+    const sortedEvals = [...evaluations].sort((a, b) => b.final_score - a.final_score);
+    const medianFeedback = sortedEvals[Math.floor(sortedEvals.length / 2)]?.overall_feedback;
+    if (medianFeedback) {
+      summary += medianFeedback;
+    }
+  }
+  
+  return summary;
+}
+
+function extractStrengths(evaluations: any[]): string[] {
+  if (!evaluations || evaluations.length === 0) return [];
+  
+  const strengths: string[] = [];
+  evaluations.forEach(e => {
+    if (e?.strengths && Array.isArray(e.strengths)) {
+      // Each evaluation can contribute multiple strengths
+      strengths.push(...e.strengths);
+    }
+  });
+  
+  // Remove duplicates and return top 5 most common strengths
+  const uniqueStrengths = Array.from(new Set(strengths));
+  return uniqueStrengths.slice(0, 5);
+}
+
+function extractWeaknesses(evaluations: any[]): string[] {
+  if (!evaluations || evaluations.length === 0) return [];
+  
+  const weaknesses: string[] = [];
+  evaluations.forEach(e => {
+    // Collect missing concepts
+    if (e?.missing_concepts && Array.isArray(e.missing_concepts)) {
+      weaknesses.push(...e.missing_concepts.map((c: string) => `Missing: ${c}`));
+    }
+    // Collect improvements
+    if (e?.improvements && Array.isArray(e.improvements)) {
+      weaknesses.push(...e.improvements);
+    }
+  });
+  
+  // Remove duplicates and return top 5
+  const uniqueWeaknesses = Array.from(new Set(weaknesses));
+  return uniqueWeaknesses.slice(0, 5);
+}
+
+function calculateMetrics(evaluations: any[]): any[] {
+  if (!evaluations || evaluations.length === 0) {
+    return mockResultData.metrics;
+  }
+  
+  // Calculate average scores for each metric
+  // Backend returns score_breakdown with values 0-10
+  const technicalScores = evaluations.map(e => (e?.score_breakdown?.technical_accuracy || 0) * 10); // Convert 0-10 to 0-100
+  const clarityScores = evaluations.map(e => (e?.score_breakdown?.clarity_score || 0) * 10);
+  const keywordScores = evaluations.map(e => (e?.score_breakdown?.keyword_score || 0) * 10);
+  const depthScores = evaluations.map(e => (e?.score_breakdown?.depth_score || 0) * 10);
+  const embeddingScores = evaluations.map(e => (e?.score_breakdown?.embedding_score || 0) * 10);
+  
+  const avg = (arr: number[]) => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+  
+  return [
+    {
+      label: "Technical Accuracy",
+      score: Math.round(avg(technicalScores)),
+      icon: Brain,
+      color: "#10B981",
+      feedback: avg(technicalScores) >= 80 ? "Excellent technical knowledge" : "Work on technical fundamentals",
+    },
+    {
+      label: "Communication Clarity",
+      score: Math.round(avg(clarityScores)),
+      icon: MessageSquare,
+      color: "#3B82F6",
+      feedback: avg(clarityScores) >= 80 ? "Clear and well-structured" : "Practice clearer communication",
+    },
+    {
+      label: "Keyword Coverage",
+      score: Math.round(avg(keywordScores)),
+      icon: Target,
+      color: "#8B5CF6",
+      feedback: avg(keywordScores) >= 80 ? "Good use of terminology" : "Learn more industry terms",
+    },
+    {
+      label: "Content Depth",
+      score: Math.round(avg(depthScores)),
+      icon: Video,
+      color: "#F59E0B",
+      feedback: avg(depthScores) >= 80 ? "Detailed responses" : "Provide more detailed answers",
+    },
+  ];
+}
+
 function MetricCard({
   label,
   score,
@@ -204,7 +351,7 @@ function QuestionAccordion({
   question,
   index,
 }: {
-  question: (typeof mockResultData.questions)[0];
+  question: (typeof resultData.questions)[0];
   index: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -469,9 +616,116 @@ function CircularProgress({ score }: { score: number }) {
 
 export default function InterviewResults() {
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get real evaluation data from navigation state
+  const {
+    questions: realQuestions = [],
+    answers: userAnswers = [],
+    evaluations = [],
+    overallScore: passedOverallScore,
+    interviewConfig,
+    communicationAnalytics = [],
+  } = location.state || {};
+  
+  // Transform real evaluation data to match expected format
+  const resultData = passedOverallScore ? {
+    overallScore: passedOverallScore,
+    date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+    duration: `${Math.floor(realQuestions.length * 2)} min`,
+    role: interviewConfig?.role || 'Software Engineer',
+    level: interviewConfig?.difficulty === 'easy' ? 'Entry Level' : interviewConfig?.difficulty === 'hard' ? 'Senior Level' : 'Mid Level',
+    summary: generateSummary(evaluations, passedOverallScore),
+    strengths: extractStrengths(evaluations),
+    weaknesses: extractWeaknesses(evaluations),
+    metrics: calculateMetrics(evaluations),
+    questions: realQuestions.map((q: any, idx: number) => ({
+      id: idx + 1,
+      question: q.question,
+      yourAnswer: userAnswers[idx] || 'No answer provided',
+      idealAnswer: q.ideal_answer,
+      score: evaluations[idx]?.final_score || 0,
+      improvements: evaluations[idx]?.improvements || [],
+    })),
+  } : mockResultData;
+
+  // Export PDF functionality
+  const handleExportPDF = () => {
+    try {
+      // Open print dialog (user can save as PDF)
+      window.print();
+    } catch (error) {
+      console.error('PDF export error:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  // Share Results functionality
+  const handleShareResults = async () => {
+    try {
+      const shareData = {
+        title: `InterVox Interview Results - ${resultData.overallScore}%`,
+        text: `I scored ${resultData.overallScore}% on my ${resultData.role} interview practice! 🎯\n\nPerformance Breakdown:\n${resultData.metrics.map(m => `${m.label}: ${m.score}%`).join('\n')}\n\nPowered by InterVox AI`,
+        url: window.location.href,
+      };
+
+      // Check if Web Share API is supported
+      if (navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        // Fallback: Copy to clipboard
+        const shareText = `InterVox Interview Results\n\nScore: ${resultData.overallScore}%\nRole: ${resultData.role}\nDate: ${resultData.date}\n\n${shareData.text}`;
+        await navigator.clipboard.writeText(shareText);
+        alert('Results copied to clipboard! You can now paste and share.');
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      // Fallback to clipboard if share fails
+      try {
+        const shareText = `InterVox Interview Results\nScore: ${resultData.overallScore}%\nRole: ${resultData.role}`;
+        await navigator.clipboard.writeText(shareText);
+        alert('Results copied to clipboard!');
+      } catch {
+        alert('Sharing not supported. Please take a screenshot to share your results.');
+      }
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB]">
+    <>
+      {/* Print Styles */}
+      <style>{`
+        @media print {
+          @page {
+            margin: 1cm;
+            size: A4;
+          }
+          
+          /* Hide navigation and action buttons */
+          header button,
+          .no-print {
+            display: none !important;
+          }
+          
+          /* Ensure proper page breaks */
+          .page-break-avoid {
+            page-break-inside: avoid;
+          }
+          
+          /* Optimize colors for print */
+          body {
+            background: white !important;
+          }
+          
+          /* Make sure content is visible */
+          * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      `}</style>
+      
+      <div className="min-h-screen bg-[#F9FAFB]" id="results-content">{/* Print-friendly ID */}
       {/* Top Bar */}
       <header className="bg-white border-b border-[#E2E8F0] sticky top-0 z-30 px-6 lg:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
@@ -490,6 +744,7 @@ export default function InterviewResults() {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={handleExportPDF}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#E2E8F0] bg-white hover:bg-[#F8FAFC] transition-colors"
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -502,6 +757,7 @@ export default function InterviewResults() {
               Export PDF
             </button>
             <button
+              onClick={handleShareResults}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors"
               style={{
                 fontFamily: "'Inter', sans-serif",
@@ -527,7 +783,7 @@ export default function InterviewResults() {
           <div className="flex flex-col lg:flex-row items-center gap-8">
             {/* Score Ring */}
             <div className="flex-shrink-0">
-              <CircularProgress score={mockResultData.overallScore} />
+              <CircularProgress score={resultData.overallScore} />
             </div>
 
             {/* Info and Actions */}
@@ -554,17 +810,17 @@ export default function InterviewResults() {
                   marginBottom: "8px",
                 }}
               >
-                {mockResultData.role} • {mockResultData.level}
+                {resultData.role} • {resultData.level}
               </p>
               <div className="flex items-center justify-center lg:justify-start gap-4 text-sm text-[#94A3B8] mb-6">
                 <span className="flex items-center gap-1.5">
                   <Calendar size={14} strokeWidth={2} />
-                  {mockResultData.date}
+                  {resultData.date}
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1.5">
                   <Clock size={14} strokeWidth={2} />
-                  {mockResultData.duration}
+                  {resultData.duration}
                 </span>
               </div>
 
@@ -613,55 +869,248 @@ export default function InterviewResults() {
             Performance Breakdown
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {mockResultData.metrics.map((metric) => (
+            {resultData.metrics.map((metric) => (
               <MetricCard key={metric.label} {...metric} />
             ))}
           </div>
         </div>
 
-        {/* AI Summary Section */}
+        {/* Communication Analytics Section */}
+        {communicationAnalytics && communicationAnalytics.length > 0 && (
+          <div className="mb-8">
+            <h2
+              style={{
+                fontFamily: "'Montserrat', sans-serif",
+                fontWeight: 700,
+                fontSize: "1.25rem",
+                color: "#1E293B",
+                marginBottom: "20px",
+              }}
+            >
+              Communication Analytics
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Words Per Minute */}
+              <div
+                className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#10B98115" }}
+                  >
+                    <TrendingUp size={18} strokeWidth={2} style={{ color: "#10B981" }} />
+                  </div>
+                  <h3
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                      color: "#64748B",
+                    }}
+                  >
+                    Speaking Pace
+                  </h3>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                    }}
+                  >
+                    {Math.round(communicationAnalytics.reduce((sum: number, a: any) => sum + a.metrics.wordsPerMinute, 0) / communicationAnalytics.length)}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#94A3B8",
+                    }}
+                  >
+                    WPM
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.75rem",
+                    color: "#94A3B8",
+                    marginTop: "8px",
+                  }}
+                >
+                  Ideal range: 120-150 WPM
+                </p>
+              </div>
+
+              {/* Fluency Score */}
+              <div
+                className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#2563EB15" }}
+                  >
+                    <Zap size={18} strokeWidth={2} style={{ color: "#2563EB" }} />
+                  </div>
+                  <h3
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                      color: "#64748B",
+                    }}
+                  >
+                    Fluency Score
+                  </h3>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                    }}
+                  >
+                    {Math.round(communicationAnalytics.reduce((sum: number, a: any) => sum + a.metrics.fluencyScore, 0) / communicationAnalytics.length)}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#94A3B8",
+                    }}
+                  >
+                    %
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.75rem",
+                    color: "#94A3B8",
+                    marginTop: "8px",
+                  }}
+                >
+                  Based on pace, fillers & pauses
+                </p>
+              </div>
+
+              {/* Filler Words */}
+              <div
+                className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ backgroundColor: "#F59E0B15" }}
+                  >
+                    <Pause size={18} strokeWidth={2} style={{ color: "#F59E0B" }} />
+                  </div>
+                  <h3
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontWeight: 600,
+                      fontSize: "0.875rem",
+                      color: "#64748B",
+                    }}
+                  >
+                    Filler Words
+                  </h3>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <span
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                    }}
+                  >
+                    {communicationAnalytics.reduce((sum: number, a: any) => sum + a.metrics.fillerWords.count, 0)}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.875rem",
+                      color: "#94A3B8",
+                    }}
+                  >
+                    total
+                  </span>
+                </div>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.75rem",
+                    color: "#94A3B8",
+                    marginTop: "8px",
+                  }}
+                >
+                  Um, uh, like, you know
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* AI Summary Section - ENHANCED */}
         <div className="mb-8">
           <div
-            className="bg-gradient-to-br from-[#EFF6FF] to-white rounded-2xl border border-[#DBEAFE] p-6 lg:p-8"
-            style={{ boxShadow: "0 2px 16px rgba(37,99,235,0.08)" }}
+            className="bg-gradient-to-br from-[#EEF2FF] to-[#E0E7FF] rounded-2xl border-2 border-[#818CF8] p-6 lg:p-8"
+            style={{ boxShadow: "0 8px 32px rgba(99, 102, 241, 0.15)" }}
           >
-            <div className="flex items-start gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2563EB] to-[#1D4ED8] flex items-center justify-center flex-shrink-0">
-                <Sparkles size={18} className="text-white" strokeWidth={2} />
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#818CF8] to-[#6366F1] flex items-center justify-center flex-shrink-0 shadow-lg">
+                <Sparkles size={24} className="text-white" strokeWidth={2.5} />
               </div>
               <div>
                 <h2
                   style={{
                     fontFamily: "'Montserrat', sans-serif",
                     fontWeight: 800,
-                    fontSize: "1.25rem",
+                    fontSize: "1.5rem",
                     color: "#1E293B",
-                    marginBottom: "4px",
+                    marginBottom: "6px",
+                    letterSpacing: "-0.02em",
                   }}
                 >
-                  AI Interview Summary
+                  🤖 AI Interview Summary
                 </h2>
                 <p
                   style={{
                     fontFamily: "'Inter', sans-serif",
-                    fontSize: "0.8rem",
-                    color: "#64748B",
+                    fontSize: "0.875rem",
+                    color: "#4338CA",
+                    fontWeight: 600,
                   }}
                 >
-                  Generated analysis based on your responses
+                  Comprehensive analysis based on your interview performance
                 </p>
               </div>
             </div>
-            <p
-              style={{
-                fontFamily: "'Inter', sans-serif",
-                fontSize: "0.95rem",
-                color: "#475569",
-                lineHeight: 1.8,
-              }}
+            <div
+              className="bg-white/90 backdrop-blur-sm rounded-xl p-6 border border-[#C7D2FE] shadow-sm"
             >
-              {mockResultData.summary}
-            </p>
+              <p
+                style={{
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: "1rem",
+                  color: "#334155",
+                  lineHeight: 1.9,
+                  fontWeight: 400,
+                }}
+              >
+                {resultData.summary}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -700,7 +1149,7 @@ export default function InterviewResults() {
                 </h3>
               </div>
               <ul className="flex flex-col gap-3">
-                {mockResultData.strengths.map((strength, idx) => (
+                {resultData.strengths.map((strength, idx) => (
                   <li
                     key={idx}
                     className="flex items-start gap-3 p-3 rounded-xl border border-[#D1FAE5]"
@@ -743,7 +1192,7 @@ export default function InterviewResults() {
                 </h3>
               </div>
               <ul className="flex flex-col gap-3">
-                {mockResultData.weaknesses.map((weakness, idx) => (
+                {resultData.weaknesses.map((weakness, idx) => (
                   <li
                     key={idx}
                     className="flex items-start gap-3 p-3 rounded-xl border border-[#FED7AA]"
@@ -787,16 +1236,17 @@ export default function InterviewResults() {
                 color: "#94A3B8",
               }}
             >
-              {mockResultData.questions.length} questions answered
+              {resultData.questions.length} questions answered
             </span>
           </div>
           <div className="flex flex-col gap-4">
-            {mockResultData.questions.map((question, index) => (
+            {resultData.questions.map((question, index) => (
               <QuestionAccordion key={question.id} question={question} index={index} />
             ))}
           </div>
         </div>
       </div>
     </div>
+    </>
   );
 }

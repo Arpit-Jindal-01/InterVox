@@ -1,34 +1,22 @@
 import { useState } from "react";
-import { X, Play, Briefcase, ChevronDown, Check, Sparkles } from "lucide-react";
+import { X, Play, Briefcase, ChevronDown, Check, Sparkles, Zap, Clock } from "lucide-react";
 import { useNavigate } from "react-router";
 
-const roles = [
-  "Software Engineer",
-  "Product Manager",
-  "Data Analyst",
-  "UX Designer",
-  "Marketing Manager",
-  "Sales Executive",
-  "Business Analyst",
-  "DevOps Engineer",
-  "Frontend Developer",
-  "Backend Developer",
+interface RoleOption {
+  value: string; // Backend enum value
+  display: string; // User-friendly display name
+}
+
+const roles: RoleOption[] = [
+  { value: "ml_engineer", display: "ML Engineer" },
+  { value: "software_engineer", display: "Software Engineer" },
+  { value: "data_scientist", display: "Data Scientist" },
+  { value: "backend_engineer", display: "Backend Engineer" },
+  { value: "frontend_engineer", display: "Frontend Engineer" },
 ];
 
-const focusTagOptions = [
-  "Behavioral",
-  "Technical",
-  "Leadership",
-  "Problem Solving",
-  "Communication",
-  "STAR Method",
-  "Negotiation",
-  "Situational",
-  "Case Study",
-  "Culture Fit",
-];
-
-type ExperienceLevel = "Fresher" | "Mid" | "Senior";
+type DifficultyLevel = "easy" | "medium" | "hard";
+type QuestionCount = 5 | 10 | 15;
 
 interface InterviewSetupModalProps {
   onClose: () => void;
@@ -36,26 +24,36 @@ interface InterviewSetupModalProps {
 
 export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
   const navigate = useNavigate();
-  const [selectedRole, setSelectedRole] = useState("");
+  const [selectedRole, setSelectedRole] = useState<string>("");
   const [roleOpen, setRoleOpen] = useState(false);
-  const [experience, setExperience] = useState<ExperienceLevel>("Fresher");
-  const [selectedTags, setSelectedTags] = useState<string[]>(["Behavioral", "Communication"]);
-
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
-  };
+  const [difficulty, setDifficulty] = useState<DifficultyLevel>("medium");
+  const [questionCount, setQuestionCount] = useState<QuestionCount>(10);
 
   const handleStart = () => {
+    if (!selectedRole) return;
+    
     onClose();
-    navigate("/interview-live");
+    
+    // Pass interview configuration to LiveInterview via navigation state
+    navigate("/interview-live", {
+      state: {
+        role: selectedRole,
+        difficulty: difficulty,
+        questionCount: questionCount,
+      }
+    });
   };
 
-  const experienceLevels: { value: ExperienceLevel; label: string; desc: string; color: string }[] = [
-    { value: "Fresher", label: "Fresher", desc: "0–1 years", color: "#7C3AED" },
-    { value: "Mid", label: "Mid Level", desc: "2–5 years", color: "#2563EB" },
-    { value: "Senior", label: "Senior", desc: "6+ years", color: "#0891B2" },
+  const difficultyLevels: { value: DifficultyLevel; label: string; desc: string; color: string }[] = [
+    { value: "easy", label: "Easy", desc: "Beginner", color: "#10B981" },
+    { value: "medium", label: "Medium", desc: "Intermediate", color: "#F59E0B" },
+    { value: "hard", label: "Hard", desc: "Advanced", color: "#EF4444" },
+  ];
+
+  const questionCounts: { value: QuestionCount; label: string; desc: string }[] = [
+    { value: 5, label: "5", desc: "~10 min" },
+    { value: 10, label: "10", desc: "~20 min" },
+    { value: 15, label: "15", desc: "~30 min" },
   ];
 
   return (
@@ -118,7 +116,7 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
                 style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}
               >
                 <span style={{ color: selectedRole ? "#1E293B" : "#94A3B8" }}>
-                  {selectedRole || "e.g. Software Engineer, PM…"}
+                  {selectedRole ? roles.find(r => r.value === selectedRole)?.display : "Select your role..."}
                 </span>
                 <ChevronDown
                   size={16}
@@ -131,13 +129,13 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-20 overflow-hidden max-h-52 overflow-y-auto">
                   {roles.map((role) => (
                     <button
-                      key={role}
-                      onClick={() => { setSelectedRole(role); setRoleOpen(false); }}
+                      key={role.value}
+                      onClick={() => { setSelectedRole(role.value); setRoleOpen(false); }}
                       className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#F8FAFC] text-left transition-colors"
                       style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.875rem", color: "#1E293B" }}
                     >
-                      {role}
-                      {selectedRole === role && (
+                      {role.display}
+                      {selectedRole === role.value && (
                         <Check size={14} strokeWidth={2.5} className="text-[#2563EB]" />
                       )}
                     </button>
@@ -147,20 +145,23 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
             </div>
           </div>
 
-          {/* Experience Level */}
+          {/* Difficulty Level */}
           <div className="flex flex-col gap-2">
             <label
               style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.875rem", color: "#1E293B" }}
             >
-              Experience Level
+              <div className="flex items-center gap-2">
+                <Zap size={14} strokeWidth={2.5} className="text-[#F59E0B]" />
+                Difficulty Level
+              </div>
             </label>
             <div className="grid grid-cols-3 gap-3">
-              {experienceLevels.map(({ value, label, desc, color }) => {
-                const isSelected = experience === value;
+              {difficultyLevels.map(({ value, label, desc, color }) => {
+                const isSelected = difficulty === value;
                 return (
                   <button
                     key={value}
-                    onClick={() => setExperience(value)}
+                    onClick={() => setDifficulty(value)}
                     className="flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all duration-150"
                     style={{
                       borderColor: isSelected ? color : "#E2E8F0",
@@ -195,35 +196,42 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
             </div>
           </div>
 
-          {/* Focus Tags */}
+          {/* Question Count */}
           <div className="flex flex-col gap-2">
             <label
               style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.875rem", color: "#1E293B" }}
             >
-              Focus Tags
-              <span style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400, color: "#94A3B8", marginLeft: "8px", fontSize: "0.78rem" }}>
-                Select all that apply
-              </span>
+              <div className="flex items-center gap-2">
+                <Clock size={14} strokeWidth={2.5} className="text-[#2563EB]" />
+                Number of Questions
+              </div>
             </label>
-            <div className="flex flex-wrap gap-2">
-              {focusTagOptions.map((tag) => {
-                const isSelected = selectedTags.includes(tag);
+            <div className="grid grid-cols-3 gap-3">
+              {questionCounts.map(({ value, label, desc }) => {
+                const isSelected = questionCount === value;
                 return (
                   <button
-                    key={tag}
-                    onClick={() => toggleTag(tag)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all duration-150 text-sm"
+                    key={value}
+                    onClick={() => setQuestionCount(value)}
+                    className="flex flex-col items-center gap-1 py-3 px-2 rounded-xl border-2 transition-all duration-150"
                     style={{
-                      fontFamily: "'Inter', sans-serif",
-                      fontWeight: isSelected ? 600 : 500,
-                      fontSize: "0.8rem",
                       borderColor: isSelected ? "#2563EB" : "#E2E8F0",
                       backgroundColor: isSelected ? "#EFF6FF" : "#F8FAFC",
-                      color: isSelected ? "#2563EB" : "#475569",
                     }}
                   >
-                    {isSelected && <Check size={11} strokeWidth={3} />}
-                    {tag}
+                    <span
+                      style={{
+                        fontFamily: "'Inter', sans-serif",
+                        fontWeight: 800,
+                        fontSize: "1.25rem",
+                        color: isSelected ? "#2563EB" : "#475569",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <span style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.68rem", color: "#94A3B8" }}>
+                      {desc}
+                    </span>
                   </button>
                 );
               })}
