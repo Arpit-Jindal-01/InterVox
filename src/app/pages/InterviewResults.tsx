@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router";
 import {
   ChevronLeft,
@@ -22,8 +22,11 @@ import {
   TrendingUp,
   Zap,
   Pause,
+  Save,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import SaveInterviewModal from "../components/SaveInterviewModal";
+import { saveInterviewSession } from "../../utils/interviewStorage";
 
 // Mock data for the interview results
 const mockResultData = {
@@ -618,6 +621,10 @@ export default function InterviewResults() {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // Save modal state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  
   // Get real evaluation data from navigation state
   const {
     questions: realQuestions = [],
@@ -627,6 +634,18 @@ export default function InterviewResults() {
     interviewConfig,
     communicationAnalytics = [],
   } = location.state || {};
+  
+  // Show save modal on page load (only if we have real data and not already saved)
+  useEffect(() => {
+    if (passedOverallScore !== undefined && !isSaved) {
+      // Show modal after 1 second delay
+      const timer = setTimeout(() => {
+        setShowSaveModal(true);
+      }, 1000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [passedOverallScore, isSaved]);
   
   // Transform real evaluation data to match expected format
   const resultData = passedOverallScore ? {
@@ -691,8 +710,61 @@ export default function InterviewResults() {
     }
   };
 
+  // Save interview to history
+  const handleSaveInterview = () => {
+    try {
+      const questionsAnswered = userAnswers.filter((a: string) => a && a.trim()).length;
+      
+      // Calculate duration based on analytics or fallback
+      const durationMinutes = Math.floor(realQuestions.length * 2);
+      const duration = `${durationMinutes} min`;
+      
+      saveInterviewSession({
+        date: resultData.date,
+        dateShort: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        role: resultData.role,
+        level: resultData.level,
+        difficulty: interviewConfig?.difficulty || 'medium',
+        score: resultData.overallScore,
+        duration: duration,
+        questions: realQuestions.length,
+        questionsAnswered: questionsAnswered,
+        fullData: {
+          questions: realQuestions,
+          answers: userAnswers,
+          evaluations: evaluations,
+          communicationAnalytics: communicationAnalytics,
+          interviewConfig: interviewConfig,
+        },
+      });
+      
+      setIsSaved(true);
+      setShowSaveModal(false);
+      
+      console.log('✅ Interview saved to history!');
+    } catch (error) {
+      console.error('❌ Error saving interview:', error);
+      alert('Failed to save interview. Please try again.');
+    }
+  };
+
+  // Skip saving
+  const handleSkipSave = () => {
+    setShowSaveModal(false);
+    console.log('⏭️ Interview not saved');
+  };
+
   return (
     <>
+      {/* Save Interview Modal */}
+      <SaveInterviewModal
+        open={showSaveModal}
+        onSave={handleSaveInterview}
+        onSkip={handleSkipSave}
+        score={resultData.overallScore}
+        role={resultData.role}
+      />
+      
       {/* Print Styles */}
       <style>{`
         @media print {

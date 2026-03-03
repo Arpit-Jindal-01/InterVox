@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import {
   Calendar,
@@ -13,78 +13,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-
-// Mock data for past interview sessions
-const mockSessions = [
-  {
-    id: 1,
-    date: "March 2, 2026",
-    dateShort: "Mar 2",
-    role: "Software Engineer",
-    level: "Mid Level",
-    score: 88,
-    duration: "24 min",
-    questions: 10,
-  },
-  {
-    id: 2,
-    date: "February 28, 2026",
-    dateShort: "Feb 28",
-    role: "Frontend Developer",
-    level: "Fresher",
-    score: 91,
-    duration: "22 min",
-    questions: 10,
-  },
-  {
-    id: 3,
-    date: "February 25, 2026",
-    dateShort: "Feb 25",
-    role: "Product Manager",
-    level: "Senior",
-    score: 82,
-    duration: "26 min",
-    questions: 10,
-  },
-  {
-    id: 4,
-    date: "February 22, 2026",
-    dateShort: "Feb 22",
-    role: "Software Engineer",
-    level: "Mid Level",
-    score: 85,
-    duration: "23 min",
-    questions: 10,
-  },
-  {
-    id: 5,
-    date: "February 18, 2026",
-    dateShort: "Feb 18",
-    role: "Data Analyst",
-    level: "Mid Level",
-    score: 78,
-    duration: "25 min",
-    questions: 10,
-  },
-  {
-    id: 6,
-    date: "February 15, 2026",
-    dateShort: "Feb 15",
-    role: "UX Designer",
-    level: "Mid Level",
-    score: 80,
-    duration: "21 min",
-    questions: 10,
-  },
-];
-
-// Prepare chart data (reverse to show chronological order)
-const chartData = [...mockSessions]
-  .reverse()
-  .map((session) => ({
-    date: session.dateShort,
-    score: session.score,
-  }));
+import { getInterviewHistory, getHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
 
 function getScoreColor(score: number) {
   if (score >= 85) return "#10B981";
@@ -108,12 +37,34 @@ export default function History() {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [sessions, setSessions] = useState<InterviewSession[]>([]);
+  const [stats, setStats] = useState({ totalSessions: 0, averageScore: 0, bestScore: 0, recentTrend: 0 });
 
-  const averageScore = Math.round(mockSessions.reduce((sum, s) => sum + s.score, 0) / mockSessions.length);
-  const totalSessions = mockSessions.length;
-  const bestScore = Math.max(...mockSessions.map((s) => s.score));
+  // Load interview history from localStorage on component mount
+  useEffect(() => {
+    const loadHistory = () => {
+      const history = getInterviewHistory();
+      const historyStats = getHistoryStats();
+      
+      setSessions(history);
+      setStats(historyStats);
+      
+      console.log(`📚 Loaded ${history.length} interviews from history`);
+    };
+    
+    loadHistory();
+  }, []);
 
-  const filteredSessions = mockSessions.filter((session) =>
+  // Prepare chart data (reverse chronological for display)
+  const chartData = [...sessions]
+    .reverse()
+    .slice(0, 10) // Show last 10 sessions in chart
+    .map((session) => ({
+      date: session.dateShort,
+      score: session.score,
+    }));
+
+  const filteredSessions = sessions.filter((session) =>
     session.role.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -185,7 +136,7 @@ export default function History() {
                 lineHeight: 1,
               }}
             >
-              {totalSessions}
+              {stats.totalSessions}
             </p>
             <p
               style={{
@@ -225,11 +176,11 @@ export default function History() {
                 fontFamily: "'Montserrat', sans-serif",
                 fontWeight: 800,
                 fontSize: "2rem",
-                color: getScoreColor(averageScore),
+                color: getScoreColor(stats.averageScore),
                 lineHeight: 1,
               }}
             >
-              {averageScore}%
+              {stats.averageScore}%
             </p>
             <p
               style={{
@@ -239,7 +190,7 @@ export default function History() {
                 marginTop: "4px",
               }}
             >
-              {getScoreLabel(averageScore)} performance
+              {getScoreLabel(stats.averageScore)} performance
             </p>
           </div>
 
@@ -269,11 +220,11 @@ export default function History() {
                 fontFamily: "'Montserrat', sans-serif",
                 fontWeight: 800,
                 fontSize: "2rem",
-                color: getScoreColor(bestScore),
+                color: getScoreColor(stats.bestScore),
                 lineHeight: 1,
               }}
             >
-              {bestScore}%
+              {stats.bestScore}%
             </p>
             <p
               style={{
@@ -321,45 +272,59 @@ export default function History() {
               </div>
             </div>
 
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
-                  <XAxis
-                    dataKey="date"
-                    stroke="#94A3B8"
-                    style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.75rem" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    stroke="#94A3B8"
-                    style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.75rem" }}
-                    tickLine={false}
-                    domain={[0, 100]}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#1E293B",
-                      border: "1px solid #334155",
-                      borderRadius: "12px",
-                      padding: "8px 12px",
-                      fontFamily: "'Inter', sans-serif",
-                      fontSize: "0.875rem",
-                      color: "#E2E8F0",
-                    }}
-                    labelStyle={{ color: "#94A3B8", fontSize: "0.75rem" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#2563EB"
-                    strokeWidth={3}
-                    dot={{ fill: "#2563EB", r: 5 }}
-                    activeDot={{ r: 7 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {chartData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center">
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.875rem",
+                    color: "#94A3B8",
+                  }}
+                >
+                  No interview data to display yet
+                </p>
+              </div>
+            ) : (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
+                    <XAxis
+                      dataKey="date"
+                      stroke="#94A3B8"
+                      style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.75rem" }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      stroke="#94A3B8"
+                      style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.75rem" }}
+                      tickLine={false}
+                      domain={[0, 100]}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#1E293B",
+                        border: "1px solid #334155",
+                        borderRadius: "12px",
+                        padding: "8px 12px",
+                        fontFamily: "'Inter', sans-serif",
+                        fontSize: "0.875rem",
+                        color: "#E2E8F0",
+                      }}
+                      labelStyle={{ color: "#94A3B8", fontSize: "0.75rem" }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      stroke="#2563EB"
+                      strokeWidth={3}
+                      dot={{ fill: "#2563EB", r: 5 }}
+                      activeDot={{ r: 7 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         </div>
 
@@ -610,7 +575,22 @@ export default function History() {
 
                   <div className="col-span-2 flex items-center">
                     <button
-                      onClick={() => navigate("/interview-results")}
+                      onClick={() => {
+                        if (session.fullData) {
+                          navigate('/interview-results', {
+                            state: {
+                              questions: session.fullData.questions,
+                              answers: session.fullData.answers,
+                              evaluations: session.fullData.evaluations,
+                              overallScore: session.score,
+                              interviewConfig: session.fullData.interviewConfig,
+                              communicationAnalytics: session.fullData.communicationAnalytics,
+                            }
+                          });
+                        } else {
+                          alert('Interview data not available');
+                        }
+                      }}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] transition-colors"
                       style={{
                         fontFamily: "'Inter', sans-serif",

@@ -522,36 +522,39 @@ export default function LiveInterview() {
       console.log(`\n✅ Evaluation Complete!`);
       console.log(`   Valid results: ${validResults.length}/${questions.length}`);
       
+      // Calculate average score (0 if all questions skipped)
+      const avgScore = validResults.length > 0 
+        ? validResults.reduce((sum, r) => sum + r.final_score, 0) / validResults.length 
+        : 0;
+      
       if (validResults.length > 0) {
-        const avgScore = validResults.reduce((sum, r) => sum + r.final_score, 0) / validResults.length;
-        
         console.log(`   📈 Average score: ${avgScore.toFixed(1)}%`);
         console.log(`   📊 Score range: ${Math.min(...validResults.map(r => r.final_score))}% - ${Math.max(...validResults.map(r => r.final_score))}%`);
-        
-        // Get communication analytics summary
-        const avgMetrics = getAverageMetrics();
-        if (avgMetrics) {
-          console.log(`\n📊 Communication Analytics Summary:`);
-          console.log(`   Average WPM: ${avgMetrics.wordsPerMinute}`);
-          console.log(`   Total filler words: ${avgMetrics.fillerWords.count}`);
-          console.log(`   Average fluency: ${avgMetrics.fluencyScore}%`);
-        }
-        
-        // Navigate to results page with evaluation data - use finalAnswers from ref
-        navigate('/interview-results', {
-          state: {
-            questions: questions,
-            answers: finalAnswers, // Use ref value, not state
-            evaluations: validResults,
-            overallScore: Math.round(avgScore),
-            interviewConfig: interviewConfig,
-            communicationAnalytics: allAnalytics, // Add analytics data
-          }
-        });
       } else {
-        console.error('❌ No valid evaluations');
-        navigate('/interview-results');
+        console.log(`   ⚠️ All questions skipped - Score: 0%`);
       }
+      
+      // Get communication analytics summary
+      const avgMetrics = getAverageMetrics();
+      if (avgMetrics) {
+        console.log(`\n📊 Communication Analytics Summary:`);
+        console.log(`   Average WPM: ${avgMetrics.wordsPerMinute}`);
+        console.log(`   Total filler words: ${avgMetrics.fillerWords.count}`);
+        console.log(`   Average fluency: ${avgMetrics.fluencyScore}%`);
+      }
+      
+      // Navigate to results page with evaluation data - use finalAnswers from ref
+      // Works even if all questions skipped (score will be 0)
+      navigate('/interview-results', {
+        state: {
+          questions: questions,
+          answers: finalAnswers, // Use ref value, not state
+          evaluations: validResults,
+          overallScore: Math.round(avgScore), // 0 if all skipped
+          interviewConfig: interviewConfig,
+          communicationAnalytics: allAnalytics, // Add analytics data
+        }
+      });
     } catch (error) {
       console.error('❌ Evaluation error:', error);
       navigate('/interview-results');

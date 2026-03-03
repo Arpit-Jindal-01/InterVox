@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import {
   Play,
@@ -14,33 +14,7 @@ import {
 import { InterviewSetupModal } from "../components/dashboard/InterviewSetupModal";
 import { NotificationDropdown } from "../components/dashboard/NotificationDropdown";
 import { useNavigate } from "react-router";
-
-const recentSessions = [
-  {
-    role: "Software Engineer",
-    level: "Mid",
-    score: 88,
-    date: "Today, 10:24 AM",
-    tags: ["Technical", "Behavioral"],
-    color: "#2563EB",
-  },
-  {
-    role: "Product Manager",
-    level: "Senior",
-    score: 82,
-    date: "Yesterday, 3:10 PM",
-    tags: ["Leadership", "STAR Method"],
-    color: "#7C3AED",
-  },
-  {
-    role: "Frontend Developer",
-    level: "Fresher",
-    score: 91,
-    date: "Feb 28, 11:00 AM",
-    tags: ["Technical", "Communication"],
-    color: "#0891B2",
-  },
-];
+import { getInterviewHistory, type InterviewSession } from "../../utils/interviewStorage";
 
 const quickRoles = [
   { label: "Software Engineer", icon: "💻", color: "#EFF6FF", text: "#2563EB" },
@@ -48,6 +22,22 @@ const quickRoles = [
   { label: "Data Analyst", icon: "📊", color: "#ECFEFF", text: "#0891B2" },
   { label: "UX Designer", icon: "🎨", color: "#FFF7ED", text: "#EA580C" },
 ];
+
+const roleColors: { [key: string]: string } = {
+  "Software Engineer": "#2563EB",
+  "Frontend Developer": "#0891B2",
+  "Backend Developer": "#0891B2",
+  "Full Stack Developer": "#2563EB",
+  "Product Manager": "#7C3AED",
+  "Data Analyst": "#0891B2",
+  "Data Scientist": "#0891B2",
+  "UX Designer": "#EA580C",
+  "UI Designer": "#EA580C",
+  "DevOps Engineer": "#16A34A",
+  "Business Analyst": "#7C3AED",
+  "Marketing Manager": "#EA580C",
+  default: "#64748B",
+};
 
 function ScoreBadge({ score }: { score: number }) {
   const color = score >= 85 ? "#16A34A" : score >= 70 ? "#D97706" : "#DC2626";
@@ -71,12 +61,70 @@ function ScoreBadge({ score }: { score: number }) {
 
 export default function DashboardHome() {
   const [showModal, setShowModal] = useState(false);
+  const [recentSessions, setRecentSessions] = useState<any[]>([]);
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
   const navigate = useNavigate();
+
+  // Load recent sessions from localStorage
+  useEffect(() => {
+    const loadRecentSessions = () => {
+      const history = getInterviewHistory();
+      
+      // Transform to match UI format
+      const formattedSessions = history.slice(0, 3).map((session: InterviewSession) => {
+        const sessionDate = new Date(session.timestamp);
+        const now = new Date();
+        const diffInMs = now.getTime() - sessionDate.getTime();
+        const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+        const diffInDays = Math.floor(diffInHours / 24);
+        
+        let dateDisplay = "";
+        if (diffInHours < 1) {
+          dateDisplay = "Just now";
+        } else if (diffInHours < 24) {
+          dateDisplay = `Today, ${sessionDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        } else if (diffInDays === 1) {
+          dateDisplay = `Yesterday, ${sessionDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+        } else {
+          dateDisplay = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+        }
+
+        // Determine tags based on difficulty and score
+        const tags = [];
+        if (session.difficulty === 'hard') {
+          tags.push('Technical');
+        } else if (session.difficulty === 'medium') {
+          tags.push('Technical', 'Behavioral');
+        } else {
+          tags.push('Behavioral');
+        }
+        
+        if (session.score >= 85) {
+          tags.push('Excellent');
+        }
+
+        return {
+          id: session.id,
+          role: session.role,
+          level: session.level,
+          score: session.score,
+          date: dateDisplay,
+          tags: tags.slice(0, 2),
+          color: roleColors[session.role] || roleColors.default,
+          fullData: session.fullData,
+        };
+      });
+      
+      setRecentSessions(formattedSessions);
+      console.log(`📊 Loaded ${formattedSessions.length} recent sessions`);
+    };
+    
+    loadRecentSessions();
+  }, []);
 
   return (
     <>
@@ -190,6 +238,7 @@ export default function DashboardHome() {
                 Quick Start by Role
               </h3>
               <button
+                onClick={() => navigate("/dashboard/practice")}
                 className="flex items-center gap-1 text-[#2563EB] hover:underline"
                 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: "0.8rem" }}
               >
@@ -236,6 +285,7 @@ export default function DashboardHome() {
                 Recent Sessions
               </h3>
               <button
+                onClick={() => navigate("/dashboard/history")}
                 className="flex items-center gap-1 text-[#2563EB] hover:underline"
                 style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: "0.8rem" }}
               >
@@ -245,11 +295,39 @@ export default function DashboardHome() {
 
             <div className="bg-white rounded-2xl border border-[#E2E8F0] overflow-hidden"
               style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}>
-              {recentSessions.map((session, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center gap-4 px-5 py-4 hover:bg-[#F9FAFB] transition-colors cursor-pointer group border-b border-[#F1F5F9] last:border-b-0"
-                >
+              {recentSessions.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.875rem", color: "#94A3B8" }}>
+                    No recent interviews yet. Start your first interview!
+                  </p>
+                  <button
+                    onClick={() => setShowModal(true)}
+                    className="mt-4 px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white transition-colors"
+                    style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.875rem" }}
+                  >
+                    Start New Interview
+                  </button>
+                </div>
+              ) : (
+                recentSessions.map((session, idx) => (
+                  <div
+                    key={session.id || idx}
+                    onClick={() => {
+                      if (session.fullData) {
+                        navigate('/interview-results', {
+                          state: {
+                            questions: session.fullData.questions,
+                            answers: session.fullData.answers,
+                            evaluations: session.fullData.evaluations,
+                            overallScore: session.score,
+                            interviewConfig: session.fullData.interviewConfig,
+                            communicationAnalytics: session.fullData.communicationAnalytics,
+                          }
+                        });
+                      }
+                    }}
+                    className="flex items-center gap-4 px-5 py-4 hover:bg-[#F9FAFB] transition-colors cursor-pointer group border-b border-[#F1F5F9] last:border-b-0"
+                  >
                   {/* Color dot */}
                   <div
                     className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -296,7 +374,8 @@ export default function DashboardHome() {
 
                   <ChevronRight size={16} strokeWidth={2} className="text-[#CBD5E1] group-hover:text-[#2563EB] transition-colors" />
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
 
