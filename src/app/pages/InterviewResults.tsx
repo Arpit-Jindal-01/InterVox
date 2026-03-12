@@ -648,7 +648,7 @@ export default function InterviewResults() {
   }, [passedOverallScore, isSaved]);
   
   // Transform real evaluation data to match expected format
-  const resultData = passedOverallScore ? {
+  const resultData = passedOverallScore !== undefined ? {
     overallScore: passedOverallScore,
     date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
     duration: `${Math.floor(realQuestions.length * 2)} min`,

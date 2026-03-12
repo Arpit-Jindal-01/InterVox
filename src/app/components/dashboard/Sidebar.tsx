@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import {
   LayoutDashboard,
   Mic2,
+  BarChart3,
   ClockArrowUp,
   UserCircle,
   Settings,
@@ -17,6 +18,7 @@ import { Logo } from "../Logo";
 const navItems = [
   { icon: LayoutDashboard, label: "Home", to: "/dashboard" },
   { icon: Mic2, label: "Practice", to: "/dashboard/practice" },
+  { icon: BarChart3, label: "Analytics", to: "/dashboard/analytics" },
   { icon: ClockArrowUp, label: "History", to: "/dashboard/history" },
   { icon: UserCircle, label: "Profile", to: "/dashboard/profile" },
   { icon: Settings, label: "Settings", to: "/dashboard/settings" },

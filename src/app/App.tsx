@@ -4,6 +4,7 @@ import DashboardLayout from "./pages/DashboardLayout";
 import DashboardHome from "./pages/DashboardHome";
 import Practice from "./pages/Practice";
 import History from "./pages/History";
+import Analytics from "./pages/Analytics";
 import Profile from "./pages/Profile";
 import Settings from "./pages/Settings";
 import LiveInterview from "./pages/LiveInterview";
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardLayout />}>
           <Route index element={<DashboardHome />} />
           <Route path="practice" element={<Practice />} />
+          <Route path="analytics" element={<Analytics />} />
           <Route path="history" element={<History />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

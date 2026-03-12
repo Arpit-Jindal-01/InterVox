@@ -10,11 +10,14 @@ import {
   ArrowRight,
   Star,
   ChevronRight,
+  TrendingUp,
+  BarChart3,
+  Award,
 } from "lucide-react";
 import { InterviewSetupModal } from "../components/dashboard/InterviewSetupModal";
 import { NotificationDropdown } from "../components/dashboard/NotificationDropdown";
 import { useNavigate } from "react-router";
-import { getInterviewHistory, type InterviewSession } from "../../utils/interviewStorage";
+import { getInterviewHistory, getHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
 
 const quickRoles = [
   { label: "Software Engineer", icon: "💻", color: "#EFF6FF", text: "#2563EB" },
@@ -62,6 +65,7 @@ function ScoreBadge({ score }: { score: number }) {
 export default function DashboardHome() {
   const [showModal, setShowModal] = useState(false);
   const [recentSessions, setRecentSessions] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>({ totalSessions: 0, averageScore: 0, bestScore: 0, recentTrend: 0 });
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -73,6 +77,9 @@ export default function DashboardHome() {
   useEffect(() => {
     const loadRecentSessions = () => {
       const history = getInterviewHistory();
+      const historyStats = getHistoryStats();
+      
+      setStats(historyStats);
       
       // Transform to match UI format
       const formattedSessions = history.slice(0, 3).map((session: InterviewSession) => {
@@ -277,6 +284,135 @@ export default function DashboardHome() {
               ))}
             </div>
           </div>
+
+          {/* Performance Overview - Quick Stats */}
+          {stats.totalSessions > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 style={{ fontFamily: "'Montserrat', sans-serif", fontWeight: 700, fontSize: "1rem", color: "#1E293B" }}>
+                  Performance Overview
+                </h3>
+                <button
+                  onClick={() => navigate("/dashboard/analytics")}
+                  className="flex items-center gap-1 text-[#2563EB] hover:underline"
+                  style={{ fontFamily: "'Inter', sans-serif", fontWeight: 500, fontSize: "0.8rem" }}
+                >
+                  View Analytics <ChevronRight size={14} />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Average Score */}
+                <div
+                  className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                  style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] flex items-center justify-center">
+                      <Award size={18} className="text-[#2563EB]" strokeWidth={2} />
+                    </div>
+                  </div>
+                  <p
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {stats.averageScore}%
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#94A3B8",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Average Score
+                  </p>
+                </div>
+
+                {/* Best Score */}
+                <div
+                  className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                  style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#F0FDF4] flex items-center justify-center">
+                      <TrendingUp size={18} className="text-[#10B981]" strokeWidth={2} />
+                    </div>
+                  </div>
+                  <p
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {stats.bestScore}%
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#94A3B8",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Best Performance
+                  </p>
+                </div>
+
+                {/* Trend */}
+                <div
+                  className="bg-white rounded-2xl border border-[#E2E8F0] p-5"
+                  style={{ boxShadow: "0 1px 12px rgba(0,0,0,0.05)" }}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-[#F5F3FF] flex items-center justify-center">
+                      <BarChart3 size={18} className="text-[#7C3AED]" strokeWidth={2} />
+                    </div>
+                    {stats.recentTrend !== 0 && (
+                      <span
+                        className="text-xs font-bold"
+                        style={{
+                          color: stats.recentTrend > 0 ? "#10B981" : "#EF4444",
+                        }}
+                      >
+                        {stats.recentTrend > 0 ? "+" : ""}
+                        {Math.round(stats.recentTrend)}%
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    style={{
+                      fontFamily: "'Montserrat', sans-serif",
+                      fontWeight: 800,
+                      fontSize: "2rem",
+                      color: "#1E293B",
+                      lineHeight: 1,
+                    }}
+                  >
+                    {stats.totalSessions}
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#94A3B8",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Total Interviews
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Recent Sessions */}
           <div>
