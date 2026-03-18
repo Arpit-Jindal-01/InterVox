@@ -1,4 +1,4 @@
-import { Mail, Phone, MapPin, Twitter, Linkedin, Facebook, Instagram, ArrowRight } from "lucide-react";
+import { Mail, Phone, MapPin, X, Linkedin, Facebook, Instagram, ArrowRight } from "lucide-react";
 import { Link } from "react-router";
 import { Logo } from "./Logo";
 
@@ -60,7 +60,7 @@ export function Footer() {
             {/* Social Icons */}
             <div className="flex items-center gap-3 mt-1">
               {[
-                { icon: Twitter, label: "Twitter", href: "#", color: "#1D9BF0" },
+                { icon: X, label: "Twitter", href: "#", color: "#1D9BF0" },
                 { icon: Linkedin, label: "LinkedIn", href: "#", color: "#0A66C2" },
                 { icon: Facebook, label: "Facebook", href: "#", color: "#3B5998" },
                 { icon: Instagram, label: "Instagram", href: "#", color: "#E1306C" },
