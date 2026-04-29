@@ -22,6 +22,8 @@ export interface ScoreBreakdown {
   technical_accuracy: number;
   clarity_score: number;
   depth_score: number;
+  classifier_score?: number;
+  neural_score?: number;
 }
 
 export interface EvaluationResult {

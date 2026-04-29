@@ -117,6 +117,18 @@ export default function EvaluationResultsModal({
                 max={10}
               />
               <ScoreItem
+                label="ML Quality"
+                value={(result.score_breakdown.classifier_score ?? 0) * 100}
+                max={100}
+                isPercentage
+              />
+              <ScoreItem
+                label="Neural Est."
+                value={(result.score_breakdown.neural_score ?? 0) * 100}
+                max={100}
+                isPercentage
+              />
+              <ScoreItem
                 label="Keyword Match"
                 value={result.score_breakdown.keyword_score * 100}
                 max={100}
