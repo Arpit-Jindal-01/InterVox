@@ -35,7 +35,9 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { getInterviewHistory, getHistoryStats } from "../../utils/interviewStorage";
+import { calculateHistoryStats } from "../../utils/interviewStorage";
+import { useAuth } from "../context/AuthContext";
+import { listUserInterviews } from "../services/interviewHistoryService";
 
 // Color palette
 const COLORS = {
@@ -50,6 +52,7 @@ const COLORS = {
 
 export default function Analytics() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [history, setHistory] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
   const [insights, setInsights] = useState<any[]>([]);
@@ -61,7 +64,7 @@ export default function Analytics() {
 
   useEffect(() => {
     loadAnalyticsData();
-  }, []);
+  }, [user?.id]);
 
   // Deep validation function to ensure chart data is safe
   const validateChartData = (data: any[], requiredKeys: string[]): boolean => {
@@ -74,11 +77,11 @@ export default function Analytics() {
     });
   };
 
-  const loadAnalyticsData = () => {
+  const loadAnalyticsData = async () => {
     setIsLoading(true);
     try {
-      const interviewHistory = getInterviewHistory();
-      const historyStats = getHistoryStats();
+      const interviewHistory = await listUserInterviews(user?.id);
+      const historyStats = calculateHistoryStats(interviewHistory);
 
       setHistory(interviewHistory);
       setStats(historyStats);

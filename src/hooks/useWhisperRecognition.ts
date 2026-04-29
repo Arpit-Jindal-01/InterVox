@@ -13,7 +13,7 @@ interface UseWhisperRecognitionReturn {
   resetTranscript: () => void;
 }
 
-const API_BASE_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 export function useWhisperRecognition(): UseWhisperRecognitionReturn {
   const [transcript, setTranscript] = useState<string>('');
@@ -122,7 +122,7 @@ export function useWhisperRecognition(): UseWhisperRecognitionReturn {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
       
-      const response = await fetch(`${API_BASE_URL}/api/interview/transcribe`, {
+      const response = await fetch(`${BACKEND_URL}/api/interview/transcribe`, {
         method: 'POST',
         body: formData,
       });

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+
 export interface QuestionRequest {
   role: 'ml_engineer' | 'software_engineer' | 'data_scientist' | 'backend_engineer' | 'frontend_engineer';
   difficulty: 'easy' | 'medium' | 'hard';
@@ -26,7 +28,7 @@ export const useQuestionGenerator = () => {
     try {
       console.log('📡 Calling question generation API:', request);
       
-      const response = await fetch('http://localhost:8000/api/interview/generate-question', {
+      const response = await fetch(`${API_BASE_URL}/interview/generate-question`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

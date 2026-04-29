@@ -17,7 +17,9 @@ import {
 import { InterviewSetupModal } from "../components/dashboard/InterviewSetupModal";
 import { NotificationDropdown } from "../components/dashboard/NotificationDropdown";
 import { useNavigate } from "react-router";
-import { getInterviewHistory, getHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
+import { calculateHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
+import { useAuth } from "../context/AuthContext";
+import { listUserInterviews } from "../services/interviewHistoryService";
 
 const quickRoles = [
   { label: "Software Engineer", icon: "💻", color: "#EFF6FF", text: "#2563EB" },
@@ -72,12 +74,13 @@ export default function DashboardHome() {
     day: "numeric",
   });
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Load recent sessions from localStorage
   useEffect(() => {
-    const loadRecentSessions = () => {
-      const history = getInterviewHistory();
-      const historyStats = getHistoryStats();
+    const loadRecentSessions = async () => {
+      const history = await listUserInterviews(user?.id);
+      const historyStats = calculateHistoryStats(history);
       
       setStats(historyStats);
       
@@ -131,7 +134,7 @@ export default function DashboardHome() {
     };
     
     loadRecentSessions();
-  }, []);
+  }, [user?.id]);
 
   return (
     <>
@@ -152,7 +155,7 @@ export default function DashboardHome() {
                 lineHeight: 1.3,
               }}
             >
-              Welcome back, Alex 👋
+              Welcome back, {user?.full_name?.split(" ")[0] || "there"} 👋
             </h1>
           </div>
 

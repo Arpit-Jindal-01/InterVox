@@ -15,6 +15,16 @@ const roles: RoleOption[] = [
   { value: "frontend_engineer", display: "Frontend Engineer" },
 ];
 
+const companies = [
+  "General",
+  "Google",
+  "Amazon",
+  "Microsoft",
+  "Meta",
+  "Apple",
+  "Netflix",
+];
+
 type DifficultyLevel = "easy" | "medium" | "hard";
 type QuestionCount = 5 | 10 | 15;
 
@@ -28,6 +38,9 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
   const [roleOpen, setRoleOpen] = useState(false);
   const [difficulty, setDifficulty] = useState<DifficultyLevel>("medium");
   const [questionCount, setQuestionCount] = useState<QuestionCount>(10);
+  const [targetCompany, setTargetCompany] = useState<string>("General");
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [boardroomMode, setBoardroomMode] = useState(true);
 
   const handleStart = () => {
     if (!selectedRole) return;
@@ -40,6 +53,8 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
         role: selectedRole,
         difficulty: difficulty,
         questionCount: questionCount,
+        targetCompany,
+        boardroomMode,
       }
     });
   };
@@ -236,6 +251,69 @@ export function InterviewSetupModal({ onClose }: InterviewSetupModalProps) {
                 );
               })}
             </div>
+          </div>
+
+          {/* Company Personality */}
+          <div className="flex flex-col gap-2">
+            <label
+              style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: "0.875rem", color: "#1E293B" }}
+            >
+              Target Company Personality
+            </label>
+            <div className="relative">
+              <button
+                onClick={() => setCompanyOpen(!companyOpen)}
+                className="w-full flex items-center justify-between px-4 py-3 border border-[#E2E8F0] rounded-xl bg-[#F8FAFC] hover:border-[#2563EB] transition-colors text-left"
+                style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}
+              >
+                <span style={{ color: "#1E293B" }}>{targetCompany}</span>
+                <ChevronDown
+                  size={16}
+                  strokeWidth={2}
+                  className={`text-[#64748B] transition-transform duration-150 ${companyOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {companyOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-[#E2E8F0] rounded-xl shadow-xl z-20 overflow-hidden max-h-52 overflow-y-auto">
+                  {companies.map((company) => (
+                    <button
+                      key={company}
+                      onClick={() => { setTargetCompany(company); setCompanyOpen(false); }}
+                      className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-[#F8FAFC] text-left transition-colors"
+                      style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.875rem", color: "#1E293B" }}
+                    >
+                      {company}
+                      {targetCompany === company && (
+                        <Check size={14} strokeWidth={2.5} className="text-[#2563EB]" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Placement Twin Boardroom Mode */}
+          <div className="flex items-center justify-between p-3 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC]">
+            <div>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontWeight: 700, fontSize: "0.85rem", color: "#1E293B" }}>
+                Placement Twin Boardroom Mode
+              </p>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: "0.75rem", color: "#64748B", marginTop: "2px" }}>
+                Real-time panel simulation with interruptions and stress dynamics.
+              </p>
+            </div>
+            <button
+              onClick={() => setBoardroomMode((v) => !v)}
+              className="w-12 h-7 rounded-full transition-colors relative"
+              style={{ backgroundColor: boardroomMode ? "#2563EB" : "#CBD5E1" }}
+            >
+              <span
+                className="absolute top-1 w-5 h-5 rounded-full bg-white transition-all"
+                style={{ left: boardroomMode ? "24px" : "4px" }}
+              />
+            </button>
           </div>
         </div>
 

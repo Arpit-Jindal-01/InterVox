@@ -30,6 +30,7 @@ const jobRoles = [
 ];
 
 const companies = [
+  "General",
   "Google",
   "Microsoft",
   "Amazon",
@@ -49,6 +50,16 @@ const companies = [
 
 type ExperienceLevel = "Fresher" | "Mid-Level" | "Senior";
 
+const roleToBackend: Record<string, string> = {
+  "Software Engineer": "software_engineer",
+  "Frontend Developer": "frontend_engineer",
+  "Backend Developer": "backend_engineer",
+  "Full Stack Developer": "software_engineer",
+  "Data Scientist": "data_scientist",
+  "Data Analyst": "data_scientist",
+  "DevOps Engineer": "backend_engineer",
+};
+
 export default function Practice() {
   const navigate = useNavigate();
   const [selectedRole, setSelectedRole] = useState("");
@@ -62,8 +73,19 @@ export default function Practice() {
       alert("Please select a job role");
       return;
     }
-    // Navigate to live interview
-    navigate("/interview-live");
+
+    const normalizedRole = roleToBackend[selectedRole] || "software_engineer";
+    const difficulty = experience === "Fresher" ? "easy" : experience === "Senior" ? "hard" : "medium";
+
+    navigate("/interview-live", {
+      state: {
+        role: normalizedRole,
+        difficulty,
+        questionCount: 10,
+        targetCompany: targetCompany || "General",
+        boardroomMode: true,
+      },
+    });
   };
 
   const experienceLevels: { value: ExperienceLevel; label: string; desc: string; color: string }[] = [

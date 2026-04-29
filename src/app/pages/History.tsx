@@ -13,7 +13,9 @@ import {
   Briefcase,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { getInterviewHistory, getHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
+import { calculateHistoryStats, type InterviewSession } from "../../utils/interviewStorage";
+import { useAuth } from "../context/AuthContext";
+import { listUserInterviews } from "../services/interviewHistoryService";
 
 function getScoreColor(score: number) {
   if (score >= 85) return "#10B981";
@@ -35,6 +37,7 @@ function getScoreLabel(score: number) {
 
 export default function History() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [sessions, setSessions] = useState<InterviewSession[]>([]);
@@ -42,9 +45,9 @@ export default function History() {
 
   // Load interview history from localStorage on component mount
   useEffect(() => {
-    const loadHistory = () => {
-      const history = getInterviewHistory();
-      const historyStats = getHistoryStats();
+    const loadHistory = async () => {
+      const history = await listUserInterviews(user?.id);
+      const historyStats = calculateHistoryStats(history);
       
       setSessions(history);
       setStats(historyStats);
@@ -53,7 +56,7 @@ export default function History() {
     };
     
     loadHistory();
-  }, []);
+  }, [user?.id]);
 
   // Prepare chart data (reverse chronological for display)
   const chartData = [...sessions]

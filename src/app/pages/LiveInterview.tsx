@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Camera,
   Mic,
@@ -23,6 +23,8 @@ interface InterviewConfig {
   role: string;
   difficulty: 'easy' | 'medium' | 'hard';
   questionCount: number;
+  targetCompany?: string;
+  boardroomMode?: boolean;
 }
 
 interface PreviousQA {
@@ -31,6 +33,195 @@ interface PreviousQA {
 }
 
 type InputMode = "voice" | "text";
+
+interface VoiceProfile {
+  provider: 'sarvam' | 'system';
+  speaker: string;
+  pace: number;
+  playbackRate: number;
+  voiceHint?: string;
+}
+
+const panelInterviewers = [
+  {
+    id: "hr",
+    name: "HR Manager",
+    focus: "behavioral_culture",
+    voice: { provider: 'sarvam', speaker: "neha", pace: 0.92, playbackRate: 0.98 } as VoiceProfile,
+  },
+  {
+    id: "tech",
+    name: "Technical Interviewer",
+    focus: "technical_depth",
+    voice: { provider: 'sarvam', speaker: "male_1", pace: 0.9, playbackRate: 0.96 } as VoiceProfile,
+  },
+  {
+    id: "problem",
+    name: "Problem Solving Interviewer",
+    focus: "problem_solving",
+    voice: { provider: 'system', speaker: "male_2", pace: 0.95, playbackRate: 0.97, voiceHint: 'male_deep' } as VoiceProfile,
+  },
+  {
+    id: "comm",
+    name: "Communication Evaluator",
+    focus: "clarity_pressure_handling",
+    voice: { provider: 'system', speaker: "male_3", pace: 0.92, playbackRate: 1.0, voiceHint: 'male_clear' } as VoiceProfile,
+  },
+] as const;
+
+type PanelInterviewer = (typeof panelInterviewers)[number];
+
+function ZoomTile({
+  title,
+  subtitle,
+  isActive,
+  color,
+  initials,
+}: {
+  title: string;
+  subtitle: string;
+  isActive: boolean;
+  color: string;
+  initials: string;
+}) {
+  return (
+    <div
+      className="rounded-xl border p-3 transition-all duration-200"
+      style={{
+        backgroundColor: isActive ? `${color}22` : "#0B1220",
+        borderColor: isActive ? color : "#334155",
+        boxShadow: isActive ? `0 0 0 2px ${color}55` : "none",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+            style={{ backgroundColor: color, color: "white" }}
+          >
+            {initials}
+          </div>
+          <p
+            className="truncate"
+            style={{
+              fontFamily: "'Inter', sans-serif",
+              fontWeight: 700,
+              fontSize: "0.75rem",
+              color: "#E2E8F0",
+            }}
+          >
+            {title}
+          </p>
+        </div>
+        {isActive && (
+          <div className="flex items-end gap-0.5 h-4">
+            <span className="w-1 rounded-full bg-[#22C55E] animate-pulse" style={{ height: "8px" }} />
+            <span className="w-1 rounded-full bg-[#22C55E] animate-pulse" style={{ height: "13px", animationDelay: "0.1s" }} />
+            <span className="w-1 rounded-full bg-[#22C55E] animate-pulse" style={{ height: "6px", animationDelay: "0.2s" }} />
+          </div>
+        )}
+      </div>
+      <p
+        style={{
+          fontFamily: "'Inter', sans-serif",
+          fontSize: "0.7rem",
+          color: isActive ? "#BFDBFE" : "#94A3B8",
+          lineHeight: 1.4,
+        }}
+      >
+        {subtitle}
+      </p>
+    </div>
+  );
+}
+
+const companyPersonas: Record<string, { tone: string; challengePrompts: { low: string[]; medium: string[]; high: string[] } }> = {
+  google: {
+    tone: "Structured, systems-thinking, data-backed clarity",
+    challengePrompts: {
+      low: [
+        "Can you summarize that in one crisp sentence?",
+        "Give one metric that proves impact.",
+      ],
+      medium: [
+        "Clarify your trade-off in 20 seconds.",
+        "Scale this approach to 10x users.",
+      ],
+      high: [
+        "You are over-explaining. Distill this to core signal now.",
+        "Assume production incident is active. What is your first action?",
+      ],
+    },
+  },
+  amazon: {
+    tone: "Ownership-first, customer obsession, concrete outcomes",
+    challengePrompts: {
+      low: [
+        "What customer pain does this solve?",
+        "Who owned the final decision?",
+      ],
+      medium: [
+        "How did this improve customer experience?",
+        "What would you do if launch is blocked today?",
+      ],
+      high: [
+        "You need to show ownership. What did YOU drive end-to-end?",
+        "Assume constraints doubled. Re-plan in 30 seconds.",
+      ],
+    },
+  },
+  microsoft: {
+    tone: "Collaboration, reliability, practical engineering",
+    challengePrompts: {
+      low: [
+        "How would you align with cross-functional teams?",
+        "Explain this to a non-technical stakeholder.",
+      ],
+      medium: [
+        "What reliability risk did you account for?",
+        "What fallback plan exists if this fails?",
+      ],
+      high: [
+        "Your answer is unclear. Restate with reliability-first framing.",
+        "You have 25 seconds: risk, mitigation, owner.",
+      ],
+    },
+  },
+  meta: {
+    tone: "Speed, product impact, iteration under ambiguity",
+    challengePrompts: {
+      low: [
+        "What experiment would you run first?",
+        "What metric moves if this works?",
+      ],
+      medium: [
+        "How quickly can you validate this decision?",
+        "What if user behavior changes suddenly?",
+      ],
+      high: [
+        "Shorten this. Prioritize speed and decision quality.",
+        "Assume ambiguity increased. What's your next 2-step plan?",
+      ],
+    },
+  },
+  general: {
+    tone: "Balanced interview style",
+    challengePrompts: {
+      low: [
+        "Give one real example from your work.",
+        "What is the main risk in your approach?",
+      ],
+      medium: [
+        "Can you make that answer more concise?",
+        "What trade-off did you choose and why?",
+      ],
+      high: [
+        "You're not answering directly. Answer the core question first.",
+        "You have 20 seconds: problem, action, impact.",
+      ],
+    },
+  },
+};
 
 export default function LiveInterview() {
   const navigate = useNavigate();
@@ -44,13 +235,19 @@ export default function LiveInterview() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousQuestionRef = useRef<number>(-1); // Track previous question
+  const interruptionTimerRef = useRef<number | null>(null);
 
   // Get interview configuration from navigation state
   const interviewConfig = (location.state as InterviewConfig) || {
     role: 'software_engineer',
     difficulty: 'medium' as const,
     questionCount: 10,
+    targetCompany: 'General',
+    boardroomMode: false,
   };
+
+  const companyKey = String(interviewConfig.targetCompany || 'General').toLowerCase();
+  const companyPersona = companyPersonas[companyKey] || companyPersonas.general;
 
   // Whisper Voice Recognition Hook (More Reliable)
   const {
@@ -72,6 +269,7 @@ export default function LiveInterview() {
   // Evaluation Hook
   const {
     evaluateAnswer,
+    evaluateAnswerQuick,
     isEvaluating,
     error: evaluationError,
   } = useEvaluation();
@@ -102,9 +300,37 @@ export default function LiveInterview() {
   const [hasUserInteracted, setHasUserInteracted] = useState(false); // Track user interaction for autoplay
   const [cameraPermission, setCameraPermission] = useState<"granted" | "denied" | "prompt">("prompt");
   const [audioLevel, setAudioLevel] = useState(0);
+  const [activePanel, setActivePanel] = useState<PanelInterviewer>(panelInterviewers[0]);
+  const [interruptionPrompt, setInterruptionPrompt] = useState<string | null>(null);
+  const [pressureLevel, setPressureLevel] = useState<'low' | 'medium' | 'high'>('medium');
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
   const totalQuestions = interviewConfig.questionCount;
   const progress = ((currentQuestion + 1) / totalQuestions) * 100;
+
+  const speakAs = useCallback(
+    async (panelist: PanelInterviewer, text: string) => {
+      if (!isSoundOn || !hasUserInteracted) {
+        return;
+      }
+      setActiveSpeakerId(panelist.id);
+      await speak(text, {
+        provider: panelist.voice.provider,
+        language: 'en-IN',
+        speaker: panelist.voice.speaker,
+        pace: panelist.voice.pace,
+        playbackRate: panelist.voice.playbackRate,
+        voiceHint: panelist.voice.voiceHint,
+      });
+    },
+    [isSoundOn, hasUserInteracted, speak]
+  );
+
+  useEffect(() => {
+    if (!isSpeaking) {
+      setActiveSpeakerId(null);
+    }
+  }, [isSpeaking]);
 
   // Generate first question on mount (start with behavioral/introduction)
   useEffect(() => {
@@ -114,13 +340,19 @@ export default function LiveInterview() {
       
       try {
         // First question is ALWAYS "Tell me about yourself" - standard interview opener
+        const firstPanel = interviewConfig.boardroomMode ? panelInterviewers[0] : null;
+        const firstQuestionText = "Tell me about yourself and your background.";
         const firstQuestion = {
-          question: "Tell me about yourself and your background.",
+          question: firstPanel ? `[${firstPanel.name}] ${firstQuestionText}` : firstQuestionText,
           ideal_answer: "A strong answer should include: your current role and experience, relevant technical skills, notable achievements or projects, and what motivates you professionally.",
           keywords: ["experience", "background", "skills", "expertise", "achievements", "passion", "goals"],
           role: interviewConfig.role,
           difficulty: 'easy'
         };
+
+        if (firstPanel) {
+          setActivePanel(firstPanel);
+        }
         
         setQuestions([firstQuestion]);
         setAnswers([]); // Initialize answers array
@@ -140,6 +372,39 @@ export default function LiveInterview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Real-time boardroom interruptions while answering.
+  useEffect(() => {
+    if (!interviewConfig.boardroomMode || !questions[currentQuestion]) {
+      return;
+    }
+
+    setInterruptionPrompt(null);
+    if (interruptionTimerRef.current) {
+      window.clearTimeout(interruptionTimerRef.current);
+    }
+
+    const delayByPressure = {
+      low: 23000,
+      medium: 16000,
+      high: 10000,
+    };
+    const delayMs = delayByPressure[pressureLevel] + (currentQuestion % 2) * 2000;
+    interruptionTimerRef.current = window.setTimeout(() => {
+      const prompts = companyPersona.challengePrompts[pressureLevel];
+      const prompt = prompts[currentQuestion % prompts.length];
+      const text = `${activePanel.name}: ${prompt}`;
+      setInterruptionPrompt(text);
+      speakAs(activePanel, text);
+    }, delayMs);
+
+    return () => {
+      if (interruptionTimerRef.current) {
+        window.clearTimeout(interruptionTimerRef.current);
+        interruptionTimerRef.current = null;
+      }
+    };
+  }, [currentQuestion, questions, interviewConfig.boardroomMode, activePanel, companyPersona, pressureLevel, speakAs]);
+
   // Auto-read question aloud when question changes (only after user interaction)
   useEffect(() => {
     console.log('🎯 useEffect triggered - Current:', currentQuestion, 'Previous:', previousQuestionRef.current, 'Sound:', isSoundOn, 'User interacted:', hasUserInteracted);
@@ -157,14 +422,14 @@ export default function LiveInterview() {
       
       // Small delay to ensure previous speech is fully stopped
       setTimeout(() => {
-        speak(questions[currentQuestion].question, { language: 'en-IN', speaker: 'kavya' });
+        speakAs(activePanel, questions[currentQuestion].question);
       }, 150);
     }
     
     // Update previous question tracker
     previousQuestionRef.current = currentQuestion;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentQuestion, isSoundOn, hasUserInteracted]);
+  }, [currentQuestion, isSoundOn, hasUserInteracted, questions, activePanel, speakAs, stopSpeaking]);
 
   // Initialize camera and microphone
   useEffect(() => {
@@ -356,6 +621,19 @@ export default function LiveInterview() {
     console.log(`   WPM: ${communicationMetrics.wordsPerMinute}`);
     console.log(`   Filler words: ${communicationMetrics.fillerWords.count}`);
     console.log(`   Fluency score: ${communicationMetrics.fluencyScore}%`);
+
+    // Adaptive boardroom pressure: weaker/less clear answers increase interruption intensity.
+    const tokenCount = userAnswer.trim().split(/\s+/).filter(Boolean).length;
+    const structureBonus = /because|therefore|for example|result|impact|trade-?off|however/i.test(userAnswer) ? 8 : 0;
+    const fillerPenalty = Math.min(25, (communicationMetrics.fillerWords?.count || 0) * 2);
+    const brevityPenalty = tokenCount < 18 ? 20 : tokenCount < 35 ? 10 : 0;
+    const adaptiveScore = Math.max(
+      0,
+      Math.min(100, (communicationMetrics.fluencyScore || 55) * 0.6 + tokenCount * 0.6 + structureBonus - fillerPenalty - brevityPenalty)
+    );
+    const nextPressure: 'low' | 'medium' | 'high' = adaptiveScore >= 72 ? 'low' : adaptiveScore >= 48 ? 'medium' : 'high';
+    setPressureLevel(nextPressure);
+    console.log(`   🎯 Adaptive pressure level -> ${nextPressure} (score=${adaptiveScore.toFixed(1)})`);
     
     // Store the answer in BOTH state and ref (ref is synchronous)
     const newAnswers = [...answersRef.current];
@@ -438,15 +716,37 @@ export default function LiveInterview() {
         
         console.log(`   Difficulty: ${difficulty} (${progressPercent.toFixed(0)}% through interview)`);
         
+        const panelForNext = interviewConfig.boardroomMode
+          ? panelInterviewers[nextQuestionIndex % panelInterviewers.length]
+          : null;
+
+        if (panelForNext) {
+          setActivePanel(panelForNext);
+        }
+
         const newQuestion = await generateQuestion({
           role: interviewConfig.role as any,
           difficulty: difficulty,
-          previous_qa: previousQA,
+          previous_qa: [
+            ...previousQA,
+            ...(panelForNext
+              ? [{
+                  question: `Panel context: ${panelForNext.name}`,
+                  answer: `Company tone: ${companyPersona.tone}`,
+                }]
+              : []),
+          ],
           use_ai: true,
         });
         
         if (newQuestion) {
-          setQuestions(prev => [...prev, newQuestion]);
+          const decoratedQuestion = panelForNext
+            ? {
+                ...newQuestion,
+                question: `[${panelForNext.name}] ${newQuestion.question}`,
+              }
+            : newQuestion;
+          setQuestions(prev => [...prev, decoratedQuestion]);
           console.log('✅ Question generated:', newQuestion.question);
         } else {
           console.error('❌ Failed to generate next question');
@@ -458,6 +758,7 @@ export default function LiveInterview() {
       
       setCurrentQuestion(nextQuestionIndex);
       setTextAnswer("");
+      setInterruptionPrompt(null);
       setTimeRemaining(120);
       console.log('✅ Ready for next question');
     } else {
@@ -484,37 +785,78 @@ export default function LiveInterview() {
       console.log(`   Total answers captured: ${finalAnswers.length}`);
       console.log(`   Answers preview: [${finalAnswers.map((a, i) => `Q${i+1}:${a?'✓':'✗'}`).join(', ')}]`);
       
-      // Evaluate each Q&A pair
-      const evaluationPromises = questions.map(async (question, index) => {
+      // Evaluate each Q&A pair in sequence with retry to avoid dropped scores from rate limits.
+      const evaluationResults: Array<EvaluationResult | null> = [];
+
+      for (let index = 0; index < questions.length; index++) {
+        const question = questions[index];
         const userAnswer = finalAnswers[index] || '';
-        
+
         console.log(`\n📝 Question ${index + 1}/${questions.length}:`);
         console.log(`   Q: ${question.question.substring(0, 60)}...`);
         console.log(`   A: ${userAnswer ? userAnswer.substring(0, 60) + '...' : '❌ NO ANSWER'}`);
-        
+
         if (!userAnswer.trim()) {
           console.log('   ⚠️ Skipped - no answer provided');
-          return null; // Skip unanswered questions
+          evaluationResults.push(null);
+          continue;
         }
-        
-        const result = await evaluateAnswer({
-          question: question.question,
-          user_answer: userAnswer,
-          ideal_answer: question.ideal_answer,
-          keywords: question.keywords,
-          role: interviewConfig.role,
-        });
-        
+
+        let result: EvaluationResult | null = null;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          result = await evaluateAnswer({
+            question: question.question,
+            user_answer: userAnswer,
+            ideal_answer: question.ideal_answer,
+            keywords: question.keywords,
+            role: interviewConfig.role,
+          });
+
+          if (result) {
+            break;
+          }
+
+          console.warn(`   ⚠️ Comprehensive evaluation attempt ${attempt} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 600 * attempt));
+        }
+
+        if (!result) {
+          const quickResult = await evaluateAnswerQuick({
+            user_answer: userAnswer,
+            ideal_answer: question.ideal_answer,
+            keywords: question.keywords,
+          });
+
+          if (quickResult) {
+            const quickTenScale = quickResult.score_percentage / 10;
+            result = {
+              final_score: Number(quickResult.score_percentage.toFixed(1)),
+              score_breakdown: {
+                embedding_score: quickResult.semantic_score,
+                keyword_score: quickResult.keyword_score,
+                technical_accuracy: Number(quickTenScale.toFixed(1)),
+                clarity_score: Number(quickTenScale.toFixed(1)),
+                depth_score: Number((quickTenScale * 0.9).toFixed(1)),
+              },
+              missing_concepts: [],
+              strengths: ['Core meaning matched using semantic evaluation'],
+              improvements: ['Detailed LLM feedback was unavailable for this question.'],
+              grade: quickResult.score_percentage >= 70 ? 'B' : quickResult.score_percentage >= 50 ? 'C' : 'D',
+            };
+            console.log(`   ♻️ Quick fallback score: ${result.final_score}%`);
+          }
+        }
+
         if (result) {
           console.log(`   ✅ Score: ${result.final_score}% - Grade: ${result.grade}`);
           console.log(`   📊 Breakdown: Tech=${result.score_breakdown.technical_accuracy}/10, Clarity=${result.score_breakdown.clarity_score}/10`);
           console.log(`   💪 Strengths: ${result.strengths?.length || 0}, Improvements: ${result.improvements?.length || 0}`);
+        } else {
+          console.log('   ❌ Evaluation failed after retries and fallback');
         }
-        
-        return result;
-      });
-      
-      const evaluationResults = await Promise.all(evaluationPromises);
+
+        evaluationResults.push(result);
+      }
       
       // Filter out null results and calculate overall stats
       const validResults = evaluationResults.filter(r => r !== null) as EvaluationResult[];
@@ -522,13 +864,14 @@ export default function LiveInterview() {
       console.log(`\n✅ Evaluation Complete!`);
       console.log(`   Valid results: ${validResults.length}/${questions.length}`);
       
-      // Calculate average score (0 if all questions skipped)
-      const avgScore = validResults.length > 0 
-        ? validResults.reduce((sum, r) => sum + r.final_score, 0) / validResults.length 
+      // Calculate strict average score across ALL questions.
+      // Unanswered/failed evaluations count as 0 to avoid inflated scores.
+      const avgScore = questions.length > 0
+        ? evaluationResults.reduce((sum, r) => sum + (r?.final_score || 0), 0) / questions.length
         : 0;
       
       if (validResults.length > 0) {
-        console.log(`   📈 Average score: ${avgScore.toFixed(1)}%`);
+        console.log(`   📈 Strict average score (all questions): ${avgScore.toFixed(1)}%`);
         console.log(`   📊 Score range: ${Math.min(...validResults.map(r => r.final_score))}% - ${Math.max(...validResults.map(r => r.final_score))}%`);
       } else {
         console.log(`   ⚠️ All questions skipped - Score: 0%`);
@@ -549,9 +892,14 @@ export default function LiveInterview() {
         state: {
           questions: questions,
           answers: finalAnswers, // Use ref value, not state
-          evaluations: validResults,
+          evaluations: evaluationResults,
           overallScore: Math.round(avgScore), // 0 if all skipped
           interviewConfig: interviewConfig,
+          panelSummary: {
+            boardroomMode: !!interviewConfig.boardroomMode,
+            targetCompany: interviewConfig.targetCompany || 'General',
+            companyTone: companyPersona.tone,
+          },
           communicationAnalytics: allAnalytics, // Add analytics data
         }
       });
@@ -613,6 +961,21 @@ export default function LiveInterview() {
             >
               Question {currentQuestion + 1} of {totalQuestions}
             </span>
+            {interviewConfig.boardroomMode && (
+              <span
+                className="px-2 py-0.5 rounded-md"
+                style={{
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: "0.7rem",
+                  fontWeight: 700,
+                  backgroundColor: "#0B1220",
+                  color: "#93C5FD",
+                  border: "1px solid #334155",
+                }}
+              >
+                Boardroom · {interviewConfig.targetCompany || 'General'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -692,6 +1055,18 @@ export default function LiveInterview() {
               >
                 Interview Question
               </span>
+                {interviewConfig.boardroomMode && (
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      color: "#93C5FD",
+                      marginTop: "4px",
+                    }}
+                  >
+                    Active Panelist: {activePanel.name} · {companyPersona.tone}
+                  </p>
+                )}
               {isSpeaking && (
                 <div className="flex items-center gap-2 mt-1">
                   <div className="flex gap-1">
@@ -713,6 +1088,49 @@ export default function LiveInterview() {
               )}
             </div>
           </div>
+
+          {interviewConfig.boardroomMode && interruptionPrompt && (
+            <div className="mb-4 p-3 rounded-xl border border-[#7C2D12] bg-[#431407]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.75rem",
+                      fontWeight: 700,
+                      color: "#FDBA74",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: "4px",
+                    }}
+                  >
+                    Live Interruption
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: "'Inter', sans-serif",
+                      fontSize: "0.85rem",
+                      color: "#FFEDD5",
+                    }}
+                  >
+                    {interruptionPrompt}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setInterruptionPrompt(null)}
+                  className="px-3 py-1 rounded-lg border border-[#9A3412] bg-[#7C2D12] hover:bg-[#9A3412]"
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.75rem",
+                    color: "#FFEDD5",
+                    fontWeight: 600,
+                  }}
+                >
+                  Responded
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             {isGenerating || !questions[currentQuestion] ? (
@@ -795,10 +1213,10 @@ export default function LiveInterview() {
                 {isSoundOn && (
                   <button
                     onClick={() => {
-                      console.log('🎵 Play button clicked - Using Sarvam AI (Kavya voice)');
+                      console.log('🎵 Play button clicked - Using active interviewer voice');
                       setHasUserInteracted(true);
-                      // Sarvam AI TTS with Indian voice
-                      speak(questions[currentQuestion].question, { language: 'en-IN', speaker: 'kavya' });
+                      // Replay with active panel interviewer voice.
+                      speakAs(activePanel, questions[currentQuestion].question);
                     }}
                     disabled={isSpeaking}
                     className="px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 hover:scale-105 active:scale-95"
@@ -839,6 +1257,75 @@ export default function LiveInterview() {
               Action, Result) to structure your answer effectively.
             </p>
           </div>
+
+          {interviewConfig.boardroomMode && (
+            <div className="mt-5 p-4 rounded-xl bg-[#0B1220] border border-[#334155]">
+              <div className="flex items-center justify-between mb-3">
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontWeight: 700,
+                    fontSize: "0.78rem",
+                    color: "#BFDBFE",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Boardroom Panel (Zoom Style)
+                </p>
+                <p
+                  style={{
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: "0.75rem",
+                    color: "#94A3B8",
+                  }}
+                >
+                  Active Speaker: {activePanel.name}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <ZoomTile
+                  title={panelInterviewers[0].name}
+                  subtitle="Behavioral & culture fit"
+                  isActive={activeSpeakerId === panelInterviewers[0].id || activePanel.id === panelInterviewers[0].id}
+                  color="#A855F7"
+                  initials="HR"
+                />
+                <ZoomTile
+                  title={panelInterviewers[1].name}
+                  subtitle="Technical depth & architecture"
+                  isActive={activeSpeakerId === panelInterviewers[1].id || activePanel.id === panelInterviewers[1].id}
+                  color="#2563EB"
+                  initials="TE"
+                />
+                <ZoomTile
+                  title={panelInterviewers[2].name}
+                  subtitle="Case logic & trade-offs"
+                  isActive={activeSpeakerId === panelInterviewers[2].id || activePanel.id === panelInterviewers[2].id}
+                  color="#F59E0B"
+                  initials="PS"
+                />
+                <ZoomTile
+                  title={panelInterviewers[3].name}
+                  subtitle="Clarity under pressure"
+                  isActive={activeSpeakerId === panelInterviewers[3].id || activePanel.id === panelInterviewers[3].id}
+                  color="#10B981"
+                  initials="CE"
+                />
+              </div>
+
+              <div className="mt-3">
+                <ZoomTile
+                  title="You (Interviewee)"
+                  subtitle="Respond clearly, concisely, and with measurable impact"
+                  isActive={isRecording || isWhisperRecording}
+                  color="#0EA5E9"
+                  initials="YOU"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Camera Panel */}

@@ -25,14 +25,56 @@ export interface InterviewSession {
   };
 }
 
-const STORAGE_KEY = 'intervox_interview_history';
+const STORAGE_KEY_PREFIX = 'intervox_interview_history_v2';
+
+function getStorageKey(userId?: string | number): string {
+  return `${STORAGE_KEY_PREFIX}_${userId ?? 'guest'}`;
+}
+
+export function setInterviewHistory(history: InterviewSession[], userId?: string | number) {
+  localStorage.setItem(getStorageKey(userId), JSON.stringify(history || []));
+}
+
+export function calculateHistoryStats(history: InterviewSession[]) {
+  if (!history || history.length === 0) {
+    return {
+      totalSessions: 0,
+      averageScore: 0,
+      bestScore: 0,
+      recentTrend: 0,
+    };
+  }
+
+  const totalSessions = history.length;
+  const averageScore = Math.round(
+    history.reduce((sum, s) => sum + s.score, 0) / totalSessions
+  );
+  const bestScore = Math.max(...history.map(s => s.score));
+
+  const recent = history.slice(0, 3);
+  const previous = history.slice(3, 6);
+  const recentAvg = recent.length > 0
+    ? recent.reduce((sum, s) => sum + s.score, 0) / recent.length
+    : 0;
+  const previousAvg = previous.length > 0
+    ? previous.reduce((sum, s) => sum + s.score, 0) / previous.length
+    : 0;
+  const recentTrend = recentAvg - previousAvg;
+
+  return {
+    totalSessions,
+    averageScore,
+    bestScore,
+    recentTrend,
+  };
+}
 
 /**
  * Get all interview sessions from localStorage
  */
-export const getInterviewHistory = (): InterviewSession[] => {
+export const getInterviewHistory = (userId?: string | number): InterviewSession[] => {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(getStorageKey(userId));
     if (!stored) return [];
     return JSON.parse(stored);
   } catch (error) {
@@ -44,9 +86,12 @@ export const getInterviewHistory = (): InterviewSession[] => {
 /**
  * Save a new interview session
  */
-export const saveInterviewSession = (session: Omit<InterviewSession, 'id' | 'timestamp'>): InterviewSession => {
+export const saveInterviewSession = (
+  session: Omit<InterviewSession, 'id' | 'timestamp'>,
+  userId?: string | number
+): InterviewSession => {
   try {
-    const history = getInterviewHistory();
+    const history = getInterviewHistory(userId);
     
     const newSession: InterviewSession = {
       ...session,
@@ -60,7 +105,7 @@ export const saveInterviewSession = (session: Omit<InterviewSession, 'id' | 'tim
     // Keep only last 50 sessions to avoid localStorage limits
     const trimmedHistory = history.slice(0, 50);
     
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedHistory));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(trimmedHistory));
     
     console.log('✅ Interview session saved to history:', newSession.id);
     return newSession;
@@ -73,11 +118,11 @@ export const saveInterviewSession = (session: Omit<InterviewSession, 'id' | 'tim
 /**
  * Delete an interview session
  */
-export const deleteInterviewSession = (id: string): boolean => {
+export const deleteInterviewSession = (id: string, userId?: string | number): boolean => {
   try {
-    const history = getInterviewHistory();
+    const history = getInterviewHistory(userId);
     const filtered = history.filter(s => s.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+    localStorage.setItem(getStorageKey(userId), JSON.stringify(filtered));
     console.log('🗑️ Interview session deleted:', id);
     return true;
   } catch (error) {
@@ -89,47 +134,15 @@ export const deleteInterviewSession = (id: string): boolean => {
 /**
  * Get a specific interview session by ID
  */
-export const getInterviewSession = (id: string): InterviewSession | null => {
-  const history = getInterviewHistory();
+export const getInterviewSession = (id: string, userId?: string | number): InterviewSession | null => {
+  const history = getInterviewHistory(userId);
   return history.find(s => s.id === id) || null;
 };
 
 /**
  * Get statistics from interview history
  */
-export const getHistoryStats = () => {
-  const history = getInterviewHistory();
-  
-  if (history.length === 0) {
-    return {
-      totalSessions: 0,
-      averageScore: 0,
-      bestScore: 0,
-      recentTrend: 0,
-    };
-  }
-  
-  const totalSessions = history.length;
-  const averageScore = Math.round(
-    history.reduce((sum, s) => sum + s.score, 0) / totalSessions
-  );
-  const bestScore = Math.max(...history.map(s => s.score));
-  
-  // Calculate trend (comparing last 3 to previous 3)
-  const recent = history.slice(0, 3);
-  const previous = history.slice(3, 6);
-  const recentAvg = recent.length > 0 
-    ? recent.reduce((sum, s) => sum + s.score, 0) / recent.length 
-    : 0;
-  const previousAvg = previous.length > 0 
-    ? previous.reduce((sum, s) => sum + s.score, 0) / previous.length 
-    : 0;
-  const recentTrend = recentAvg - previousAvg;
-  
-  return {
-    totalSessions,
-    averageScore,
-    bestScore,
-    recentTrend,
-  };
+export const getHistoryStats = (userId?: string | number) => {
+  const history = getInterviewHistory(userId);
+  return calculateHistoryStats(history);
 };
